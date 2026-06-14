@@ -65,7 +65,7 @@ No token API is required — these are the true counts Claude Code already recor
 
 ```sh
 # In Claude Code:
-/plugin marketplace add SolFoundy/claude-token-watch
+/plugin marketplace add SolSolis-Sys/claude-token-watch
 /plugin install token-watch@token-watch
 ```
 
@@ -141,6 +141,6 @@ node test/guard-probe.js        # fire the compact nudge
 
 ## License
 
-[MIT](LICENSE) © 2026 SolFoundy
+[MIT](LICENSE) © 2026 SolSolis-Sys
 
 <div align="center"><sub>Built with Claude Code · part of the NOÛS toolset</sub></div>

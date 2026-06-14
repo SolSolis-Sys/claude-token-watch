@@ -1,8 +1,8 @@
 {
   "name": "token-watch",
   "owner": {
-    "name": "SolFoundy",
-    "url": "https://github.com/SolFoundy"
+    "name": "SolSolis-Sys",
+    "url": "https://github.com/SolSolis-Sys"
   },
   "metadata": {
     "description": "Live token & cost monitoring for Claude Code.",

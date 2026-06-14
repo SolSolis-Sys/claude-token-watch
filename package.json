@@ -20,12 +20,12 @@
     "context-window",
     "usage"
   ],
-  "author": "SolFoundy",
+  "author": "SolSolis-Sys",
   "license": "MIT",
-  "homepage": "https://github.com/SolFoundy/claude-token-watch",
+  "homepage": "https://github.com/SolSolis-Sys/claude-token-watch",
   "repository": {
     "type": "git",
-    "url": "https://github.com/SolFoundy/claude-token-watch.git"
+    "url": "https://github.com/SolSolis-Sys/claude-token-watch.git"
   },
   "engines": {
     "node": ">=18"

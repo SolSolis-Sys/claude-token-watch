@@ -1,0 +1,146 @@
+<div align="center">
+
+# 🪙 token-watch
+
+**Live token, context-window & cost monitoring for [Claude Code](https://claude.com/claude-code).**
+
+A statusline gauge, gentle auto-compact nudges, and a usage report — in one tiny plugin.
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-22c55e.svg)](LICENSE)
+[![Node](https://img.shields.io/badge/node-%E2%89%A518-3b82f6.svg)](package.json)
+[![Dependencies](https://img.shields.io/badge/dependencies-0-e74c3c.svg)](package.json)
+[![Claude Code Plugin](https://img.shields.io/badge/Claude%20Code-plugin-9b59b6.svg)](#install)
+
+</div>
+
+---
+
+```
+◈ Sonnet 4.6  ▕███████░░░▏ 72% ctx · 144k/200k  ·  $0.42
+```
+
+> Your statusline, now telling you how full your context is and what the session is costing — at a glance, on every turn.
+
+## Why
+
+Claude Code is powerful, but it's easy to lose track of two things:
+
+1. **How much of your context window is left** before quality degrades or an auto-compact surprises you.
+2. **What a session actually costs.**
+
+`token-watch` surfaces both, reads only data Claude Code already produces locally, and **never phones home**. Zero dependencies, ~400 lines of plain Node.
+
+## Features
+
+| | |
+|---|---|
+| 📊 **Statusline gauge** | Live model, context-window fill bar (green → yellow → red), and session cost. |
+| 🧹 **Auto-compact nudge** | When context crosses a threshold (default 80%), a one-line message suggests `/compact`. Never blocks. |
+| 🧾 **`/token-report`** | Cost & token usage for today, the last 7 days, and all time — plus per-session and per-model breakdowns. |
+| 🗃️ **Durable history** | A tiny one-line-per-session log survives transcript pruning. |
+| 🔒 **Local only** | Reads `~/.claude/projects/**` transcripts and the statusline payload. No network, no telemetry. |
+
+## How it works
+
+Claude Code writes a JSONL transcript per session under `~/.claude/projects/<project>/<session>.jsonl`.
+Each assistant turn records the **real** token usage:
+
+```json
+{ "type": "assistant", "message": { "model": "claude-sonnet-4-6",
+  "usage": { "input_tokens": 3, "output_tokens": 180,
+             "cache_read_input_tokens": 0,
+             "cache_creation": { "ephemeral_1h_input_tokens": 37268 } } } }
+```
+
+- The **statusline** computes resident context as `input + cache_read + cache_creation` from the latest turn — exactly what the model held that call.
+- The **Stop hook** checks that ratio and nudges you toward `/compact` when it's high.
+- The **SessionEnd hook** appends an aggregated record to `~/.claude/token-watch/usage.jsonl`.
+- **`/token-report`** merges that durable log with live transcripts and prices it using the June 2026 rate card.
+
+No token API is required — these are the true counts Claude Code already records.
+
+## Install
+
+### As a Claude Code plugin (recommended)
+
+```sh
+# In Claude Code:
+/plugin marketplace add SolFoundy/claude-token-watch
+/plugin install token-watch@token-watch
+```
+
+This wires up the statusline, the hooks, and the `/token-report` command automatically.
+
+### Manual statusline (if you prefer)
+
+Add to your `~/.claude/settings.json`:
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "node /absolute/path/to/claude-token-watch/statusline/statusline.js"
+  }
+}
+```
+
+## Usage
+
+```sh
+/token-report            # today + last 7 days + all-time summary
+/token-report today      # just today
+/token-report sessions   # recent sessions, newest first
+/token-report models     # cost grouped by model
+```
+
+Outside Claude Code it also runs standalone:
+
+```sh
+node scripts/report.js
+# or, once published:
+npx claude-token-watch
+```
+
+## Configuration
+
+| Env var | Default | Meaning |
+|---|---|---|
+| `TOKEN_WATCH_COMPACT_PCT` | `80` | Context fill % that triggers the `/compact` nudge. |
+| `NO_COLOR` | – | Set to disable ANSI colors. |
+
+Pricing lives in [`lib/pricing.js`](lib/pricing.js) and is matched by model-family
+substring, so new point releases inherit the right rates automatically. Adjust it
+there if your plan differs.
+
+## Project layout
+
+```
+.claude-plugin/   plugin.json + marketplace.json
+statusline/       statusline.js        — the live gauge
+hooks/            context-guard.js     — Stop: /compact nudge
+                  session-logger.js    — SessionEnd: durable usage log
+commands/         token-report.md      — /token-report slash command
+scripts/          report.js            — the report engine (also npx-able)
+lib/              pricing.js, transcript.js, format.js
+test/             smoke.js + probes
+```
+
+## Development
+
+```sh
+node test/smoke.js              # pure-logic checks (no network, no fixtures)
+node test/statusline-probe.js   # render the gauge against your latest transcript
+node test/guard-probe.js        # fire the compact nudge
+```
+
+## Caveats
+
+- Costs are **client-side estimates** from public rates — treat them as a guide, not a bill.
+- Live context is read from the latest assistant turn; right after `/compact` it updates on the next turn.
+- Non-Claude models seen in transcripts (e.g. via other harnesses) fall back to Sonnet-class pricing.
+
+## License
+
+[MIT](LICENSE) © 2026 SolFoundy
+
+<div align="center"><sub>Built with Claude Code · part of the NOÛS toolset</sub></div>

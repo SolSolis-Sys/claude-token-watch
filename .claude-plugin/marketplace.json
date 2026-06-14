@@ -1,0 +1,18 @@
+{
+  "name": "token-watch",
+  "owner": {
+    "name": "SolFoundy",
+    "url": "https://github.com/SolFoundy"
+  },
+  "metadata": {
+    "description": "Live token & cost monitoring for Claude Code.",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "token-watch",
+      "source": "./",
+      "description": "Live token, context-window and cost monitoring — statusline gauge, auto-compact suggestions, and usage reports."
+    }
+  ]
+}

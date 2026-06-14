@@ -1,0 +1,17 @@
+{
+  "name": "token-watch",
+  "version": "0.1.0",
+  "description": "Live token, context-window and cost monitoring for Claude Code — statusline gauge, auto-compact suggestions, and usage reports. Zero dependencies.",
+  "author": {
+    "name": "SolFoundy",
+    "url": "https://github.com/SolFoundy"
+  },
+  "homepage": "https://github.com/SolFoundy/claude-token-watch",
+  "repository": "https://github.com/SolFoundy/claude-token-watch",
+  "license": "MIT",
+  "keywords": ["tokens", "cost", "monitoring", "statusline", "context-window", "usage", "compact"],
+  "statusLine": {
+    "type": "command",
+    "command": "node \"${CLAUDE_PLUGIN_ROOT}/statusline/statusline.js\""
+  }
+}

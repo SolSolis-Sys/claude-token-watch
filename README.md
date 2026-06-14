@@ -69,20 +69,48 @@ No token API is required — these are the true counts Claude Code already recor
 /plugin install token-watch@token-watch
 ```
 
-This wires up the statusline, the hooks, and the `/token-report` command automatically.
+This wires up the **hooks** and the **`/token-report`** command automatically.
 
-### Manual statusline (if you prefer)
+> ⚠️ **The statusline gauge is one extra step.** Claude Code plugins cannot
+> contribute a `statusLine` — that is a user-level setting. Add it once
+> (below), then restart Claude Code.
 
-Add to your `~/.claude/settings.json`:
+### Step 2 — enable the statusline gauge
 
+The plugin install drops `statusline.js` under your plugins directory. Point
+`statusLine` at it in `~/.claude/settings.json` (create the key at the top
+level, alongside `"model"`):
+
+**macOS / Linux**
 ```json
 {
   "statusLine": {
     "type": "command",
-    "command": "node /absolute/path/to/claude-token-watch/statusline/statusline.js"
+    "command": "node \"$HOME/.claude/plugins/marketplaces/token-watch/statusline/statusline.js\""
   }
 }
 ```
+
+**Windows**
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "node \"C:\\Users\\<you>\\.claude\\plugins\\marketplaces\\token-watch\\statusline\\statusline.js\""
+  }
+}
+```
+
+Then **restart Claude Code** — the gauge appears on the next turn.
+
+> 💡 **Or just ask Claude to do it.** In Claude Code:
+> *"Add the token-watch statusline to my settings.json and restart."*
+> Claude can locate `plugins/marketplaces/token-watch/statusline/statusline.js`,
+> insert the `statusLine` block, and confirm — no manual JSON editing.
+
+#### Installed from a clone instead of the marketplace?
+
+Point the command at your checkout: `node "/absolute/path/to/claude-token-watch/statusline/statusline.js"`.
 
 ## Usage
 

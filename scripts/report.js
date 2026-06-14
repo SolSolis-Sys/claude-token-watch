@@ -60,7 +60,8 @@ function mergedSessions() {
   const map = new Map();
   for (const e of loadLog()) map.set(e.session, e);
   for (const [id, e] of liveSessions()) map.set(id, e); // live is fresher
-  return [...map.values()].sort((a, b) => new Date(b.ts) - new Date(a.ts));
+  const ms = (x) => (x && x.ts ? new Date(x.ts).getTime() || 0 : 0);
+  return [...map.values()].sort((a, b) => ms(b) - ms(a));
 }
 
 function sumDay(sessions, isoDay) {
@@ -136,7 +137,8 @@ function main() {
   const week = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, messages: 0 };
   const cutoff = Date.now() - 7 * 86400_000;
   for (const s of sessions) {
-    if (new Date(s.ts).getTime() < cutoff) continue;
+    const t = s.ts ? new Date(s.ts).getTime() || 0 : 0;
+    if (t < cutoff) continue;
     week.input += s.input || 0; week.output += s.output || 0;
     week.cacheRead += s.cacheRead || 0; week.cacheWrite += s.cacheWrite || 0;
     week.cost += s.cost || 0; week.messages += s.messages || 0;

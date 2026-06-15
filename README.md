@@ -154,10 +154,29 @@ The statusline shows two rolling-window gauges — `5h ▕███░░▏ 67%
 - **The metric** is `input + output + cacheWrite`, **excluding `cache_read`**:
   cache reads are the model re-reading its own resident context each turn and
   dwarf real consumption ~10-50×, which would make the gauge meaningless.
-- **Caps are estimates.** Anthropic does not publish per-window token limits, and
-  there is no safe API to read the live `/usage` numbers (the status-bar endpoint
-  is undocumented; reverse-engineering it is discouraged). The presets below are
-  heuristics — tune via `TOKEN_WATCH_SESSION_CAP` / `TOKEN_WATCH_WEEKLY_CAP`.
+> ### ⚠️ These percentages are estimates, not your exact `/usage`
+>
+> **Why they don't match Claude's official `/usage` panel exactly:**
+> 1. **Anthropic does not publish per-window limits in tokens.** The Pro/Max 5h
+>    and weekly caps are not documented as numbers, so the denominators here are
+>    community heuristics, not official ceilings.
+> 2. **There is no safe way to read the live numbers.** The `/usage` status-bar
+>    data comes from an **undocumented** internal endpoint; reverse-engineering it
+>    would mean handling your OAuth credentials and is explicitly discouraged
+>    (see [anthropics/claude-code#44328](https://github.com/anthropics/claude-code/issues/44328)).
+>    `~/.claude/stats-cache.json` only holds message/session counts — no limits.
+> 3. **The metric is an approximation.** We count `input + output + cacheWrite`
+>    and exclude `cache_read` (context re-reads), which is a *proxy* for real
+>    consumption, not Anthropic's exact accounting.
+>
+> **What we do safely:** auto-detect your *plan* (Pro/Max) from
+> `claude auth status` and apply best-effort caps. Treat the gauges as a
+> "roughly how heavy is my window" signal, not a billing-accurate figure.
+>
+> **We're actively studying this.** If a safe, supported way to read the real
+> limits appears, we'll calibrate the gauges precisely in a future release. Until
+> then you can pin your own caps via `TOKEN_WATCH_SESSION_CAP` /
+> `TOKEN_WATCH_WEEKLY_CAP`.
 
 | Plan | `session5h` preset | `weekly` preset |
 |---|---|---|

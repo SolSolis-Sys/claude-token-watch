@@ -178,11 +178,16 @@ The statusline shows two rolling-window gauges — `5h ▕███░░▏ 67%
 > then you can pin your own caps via `TOKEN_WATCH_SESSION_CAP` /
 > `TOKEN_WATCH_WEEKLY_CAP`.
 
-| Plan | `session5h` preset | `weekly` preset |
-|---|---|---|
-| `pro` | `3,000,000` | `50,000,000` |
-| `max5` | `15,000,000` | `250,000,000` |
-| `max20` | `60,000,000` | `1,000,000,000` |
+| Plan | `session5h` preset | `weekly` preset | Source |
+|---|---|---|---|
+| `pro` | `3,500,000` | `90,000,000` | calibrated vs real `/usage` (Pro account) |
+| `max5` | `17,500,000` | `450,000,000` | extrapolated 5× from Pro |
+| `max20` | `70,000,000` | `1,800,000,000` | extrapolated 20× from Pro |
+
+> The `pro` row was empirically calibrated against the official `/usage` panel
+> (two simultaneous readings on a Pro account). The Max rows scale the calibrated
+> Pro baseline at the documented tier ratios and are **not yet verified** — if you
+> run Max, pin your own caps via the env vars and a PR with your readings is welcome.
 
 Pricing lives in [`lib/pricing.js`](lib/pricing.js) and is matched by model-family
 substring, so new point releases inherit the right rates automatically. Plan caps

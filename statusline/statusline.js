@@ -7,23 +7,27 @@
  * Claude Code pipes a JSON object on stdin describing the current session.
  * We render a compact, single-line gauge:
  *
- *   ◈ Sonnet 4.6  ▕████░░░░░░▏ 38% ctx · 76k/200k  ·  $0.42  ·  5h 1.2M
+ *   ◈ Sonnet 4.6  ▕████░░░░░░▏ 38% ctx · 76k/200k  ·  $0.42  ·  5h ▕██░░░▏ 41%  ·  7d ▕█░░░░▏ 18%
  *
  * Live context size is derived from the LAST assistant message in the
  * transcript (input + cache_read + cache_creation), which is exactly the
  * number of tokens that were resident in the model's context for that call.
  * This is robust to schema churn in the statusline payload itself.
  *
+ * The 5h / 7d gauges are the subscription rolling windows (see lib/subscription).
+ *
  * Environment overrides:
  *   TOKEN_WATCH_CONTEXT_WINDOW  — override context window size in tokens
- *   TOKEN_WATCH_SESSION_CAP     — token cap for 5h rolling window (optional)
+ *   TOKEN_WATCH_PLAN            — pro | max5 | max20 (selects window caps)
+ *   TOKEN_WATCH_SESSION_CAP     — token cap for the 5h window (overrides plan)
+ *   TOKEN_WATCH_WEEKLY_CAP      — token cap for the 7d window (overrides plan)
  */
 
 const fs = require('fs');
 const path = require('path');
 const { colors, humanNumber, usd, bar, ratioColor } = require('../lib/format');
 const { contextWindow } = require('../lib/pricing');
-const { allTranscripts, readTranscript, aggregate } = require('../lib/transcript');
+const { resolveCaps, rollingUsage } = require('../lib/subscription');
 
 function readStdin() {
   try {
@@ -73,23 +77,21 @@ function sessionCost(input) {
 }
 
 /**
- * Aggregate total tokens across all transcripts in the last `windowMs` ms.
- * Used to compute the rolling 5h subscription window for the statusline.
+ * Render one rolling-window gauge: "<label> ▕███░░▏ 41%" when a cap is known,
+ * else "<label> 1.2M" as a raw total. Returns null when there's nothing to show.
  */
-function rollingTokens(windowMs) {
-  const cutoff = Date.now() - windowMs;
-  let total = 0;
-  for (const f of allTranscripts()) {
-    if (f.mtime < cutoff) continue; // transcripts sorted newest-first; could break early
-    const records = readTranscript(f.file);
-    for (const r of records) {
-      // Use timestamp from record when available, else file mtime as proxy
-      const ts = r.ts ? new Date(r.ts).getTime() : f.mtime;
-      if (ts < cutoff) continue;
-      total += r.input + r.output + r.cacheRead + r.cacheWrite;
-    }
+function windowGauge(label, tokens, cap) {
+  if (tokens <= 0) return null;
+  if (cap > 0) {
+    const pct = tokens / cap;
+    const col = ratioColor(pct);
+    return (
+      colors.dim(label + ' ') +
+      '▕' + col(bar(pct, 5)) + '▏ ' +
+      col(Math.round(pct * 100) + '%')
+    );
   }
-  return total;
+  return colors.dim(label + ' ') + colors.gray(humanNumber(tokens));
 }
 
 function main() {
@@ -123,18 +125,13 @@ function main() {
   const cost = sessionCost(input);
   if (cost != null) parts.push(colors.green(usd(cost)));
 
-  // Rolling 5h session window (subscription usage indicator)
-  const sessionCap = parseInt(process.env.TOKEN_WATCH_SESSION_CAP, 10);
-  const sessionToks = rollingTokens(5 * 3600 * 1000);
-  if (sessionToks > 0) {
-    let sessionPart = colors.dim('5h ') + colors.gray(humanNumber(sessionToks));
-    if (!isNaN(sessionCap) && sessionCap > 0) {
-      const pct = Math.round((sessionToks / sessionCap) * 100);
-      const col = ratioColor(sessionToks / sessionCap);
-      sessionPart = colors.dim('5h ') + col(humanNumber(sessionToks) + '/' + humanNumber(sessionCap) + ' (' + pct + '%)');
-    }
-    parts.push(sessionPart);
-  }
+  // Rolling subscription windows: 5h session + 7d weekly, in one pass.
+  const caps = resolveCaps();
+  const usage = rollingUsage();
+  const sessionGauge = windowGauge('5h', usage.session5h, caps.session5h);
+  if (sessionGauge) parts.push(sessionGauge);
+  const weeklyGauge = windowGauge('7d', usage.weekly, caps.weekly);
+  if (weeklyGauge) parts.push(weeklyGauge);
 
   process.stdout.write(parts.join(colors.gray('  ·  ')));
 }

@@ -175,6 +175,66 @@ ok('rolling window bucket: sessions within 7d are included', () => {
   assert.strictEqual(included[0].input, 200);
 });
 
+// ── Subscription caps resolution ─────────────────────────────────────────────
+
+const { resolveCaps, PLANS } = require('../lib/subscription');
+
+function withEnv(vars, fn) {
+  const keys = ['TOKEN_WATCH_PLAN', 'TOKEN_WATCH_SESSION_CAP', 'TOKEN_WATCH_WEEKLY_CAP'];
+  const orig = {};
+  for (const k of keys) orig[k] = process.env[k];
+  for (const k of keys) delete process.env[k];
+  Object.assign(process.env, vars);
+  try { return fn(); }
+  finally {
+    for (const k of keys) {
+      if (orig[k] === undefined) delete process.env[k];
+      else process.env[k] = orig[k];
+    }
+  }
+}
+
+ok('resolveCaps() returns no caps when nothing configured', () => {
+  withEnv({}, () => {
+    const c = resolveCaps();
+    assert.strictEqual(c.plan, null);
+    assert.strictEqual(c.session5h, 0);
+    assert.strictEqual(c.weekly, 0);
+  });
+});
+
+ok('resolveCaps() applies plan presets', () => {
+  withEnv({ TOKEN_WATCH_PLAN: 'max5' }, () => {
+    const c = resolveCaps();
+    assert.strictEqual(c.plan, 'max5');
+    assert.strictEqual(c.session5h, PLANS.max5.session5h);
+    assert.strictEqual(c.weekly, PLANS.max5.weekly);
+  });
+});
+
+ok('resolveCaps() env caps override the plan preset', () => {
+  withEnv({ TOKEN_WATCH_PLAN: 'pro', TOKEN_WATCH_SESSION_CAP: '12345', TOKEN_WATCH_WEEKLY_CAP: '67890' }, () => {
+    const c = resolveCaps();
+    assert.strictEqual(c.session5h, 12345);
+    assert.strictEqual(c.weekly, 67890);
+  });
+});
+
+ok('resolveCaps() ignores unknown plan but honors env caps', () => {
+  withEnv({ TOKEN_WATCH_PLAN: 'bogus', TOKEN_WATCH_SESSION_CAP: '500' }, () => {
+    const c = resolveCaps();
+    assert.strictEqual(c.plan, null);
+    assert.strictEqual(c.session5h, 500);
+    assert.strictEqual(c.weekly, 0);
+  });
+});
+
+ok('PLANS scale with tier (max20 > max5 > pro)', () => {
+  assert.ok(PLANS.max20.session5h > PLANS.max5.session5h);
+  assert.ok(PLANS.max5.session5h > PLANS.pro.session5h);
+  assert.ok(PLANS.max20.weekly > PLANS.pro.weekly);
+});
+
 // ── Formatters ───────────────────────────────────────────────────────────────
 
 ok('humanNumber() compacts', () => {

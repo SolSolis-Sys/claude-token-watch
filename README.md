@@ -36,7 +36,8 @@ Claude Code is powerful, but it's easy to lose track of two things:
 |---|---|
 | 📊 **Statusline gauge** | Live model, context-window fill bar (green → yellow → red), and session cost. |
 | 🧹 **Auto-compact nudge** | When context crosses a threshold (default 80%), a one-line message suggests `/compact`. Never blocks. |
-| 🧾 **`/token-report`** | Cost & token usage for today, the last 7 days, and all time — plus per-session and per-model breakdowns. |
+| 🧾 **`/token-report`** | Cost & token usage for today, the last 7 days, and all time — plus per-session, per-model, and subscription-window breakdowns. |
+| ⏱️ **Subscription windows** | Rolling 5h session and 7-day weekly token usage, with optional caps (`TOKEN_WATCH_SESSION_CAP` / `TOKEN_WATCH_WEEKLY_CAP`) displayed as `x / cap (y%)`. |
 | 🗃️ **Durable history** | A tiny one-line-per-session log survives transcript pruning. |
 | 🔒 **Local only** | Reads `~/.claude/projects/**` transcripts and the statusline payload. No network, no telemetry. |
 
@@ -134,7 +135,20 @@ npx claude-token-watch
 | Env var | Default | Meaning |
 |---|---|---|
 | `TOKEN_WATCH_COMPACT_PCT` | `80` | Context fill % that triggers the `/compact` nudge. |
+| `TOKEN_WATCH_CONTEXT_WINDOW` | _(model-derived)_ | Override context window size (tokens) for the statusline gauge. |
+| `TOKEN_WATCH_SESSION_CAP` | _(unset)_ | Token cap for the 5-hour rolling session window. Set to a number to display `x / cap (y%)`. |
+| `TOKEN_WATCH_WEEKLY_CAP` | _(unset)_ | Token cap for the 7-day rolling window. Same display logic. |
 | `NO_COLOR` | – | Set to disable ANSI colors. |
+
+#### Plan presets (optional)
+
+Set `TOKEN_WATCH_SESSION_CAP` / `TOKEN_WATCH_WEEKLY_CAP` to match your Anthropic plan. Anthropic does not publish exact token limits, so these are community estimates — adjust to your usage:
+
+| Plan | Suggested `SESSION_CAP` | Suggested `WEEKLY_CAP` |
+|---|---|---|
+| Pro | `500000` | `2000000` |
+| Max 5× | `2500000` | `10000000` |
+| Max 20× | `10000000` | `40000000` |
 
 Pricing lives in [`lib/pricing.js`](lib/pricing.js) and is matched by model-family
 substring, so new point releases inherit the right rates automatically. Adjust it
@@ -171,4 +185,4 @@ node test/guard-probe.js        # fire the compact nudge
 
 [MIT](LICENSE) © 2026 SolSolis-Sys
 
-<div align="center"><sub>Built with Claude Code · part of the NOÛS toolset</sub></div>
+<div align="center"><sub>Built with Claude Code · part of the NOWS toolset</sub></div>

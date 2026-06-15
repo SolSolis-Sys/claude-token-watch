@@ -90,6 +90,43 @@ function totalsLine(t) {
 
 function head(s) { return '\n' + bold(cyan(s)); }
 
+/**
+ * Aggregate all session records whose timestamp falls within [cutoff, now].
+ * Returns totals: { input, output, cacheRead, cacheWrite, cost, messages }.
+ */
+function rollingWindow(sessions, cutoffMs) {
+  const t = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, messages: 0 };
+  for (const s of sessions) {
+    const ts = s.ts ? new Date(s.ts).getTime() || 0 : 0;
+    if (ts < cutoffMs) continue;
+    t.input    += s.input    || 0;
+    t.output   += s.output   || 0;
+    t.cacheRead  += s.cacheRead  || 0;
+    t.cacheWrite += s.cacheWrite || 0;
+    t.cost     += s.cost     || 0;
+    t.messages += s.messages || 0;
+  }
+  return t;
+}
+
+/**
+ * Format a rolling-window total with an optional cap.
+ * If cap is set: "x / cap (y%)"
+ * Otherwise: just the token count.
+ */
+function windowLine(t, capEnvVar) {
+  const cap = parseInt(process.env[capEnvVar], 10);
+  const totalTok = t.input + t.output + t.cacheRead + t.cacheWrite;
+  let tokStr;
+  if (!isNaN(cap) && cap > 0) {
+    const pct = Math.round((totalTok / cap) * 100);
+    tokStr = gray(humanNumber(totalTok) + ' / ' + humanNumber(cap) + ' (' + pct + '%)');
+  } else {
+    tokStr = gray(humanNumber(totalTok) + dim(' tokens'));
+  }
+  return green(usd(t.cost)) + '  ' + tokStr + '  ' + gray(t.messages + ' msg');
+}
+
 function main() {
   const mode = (process.argv[2] || 'summary').toLowerCase();
   const sessions = mergedSessions();
@@ -155,6 +192,17 @@ function main() {
   }
   console.log(head('All time  ' + dim('(' + sessions.length + ' sessions)')));
   console.log('  ' + totalsLine(all));
+
+  // Subscription windows
+  const sessionWindow = rollingWindow(sessions, Date.now() - 5 * 3600_000);
+  const weeklyWindow  = rollingWindow(sessions, Date.now() - 7 * 86400_000);
+  console.log(head('Subscription windows'));
+  console.log('  ' + dim('5h   rolling: ') + windowLine(sessionWindow, 'TOKEN_WATCH_SESSION_CAP'));
+  console.log('  ' + dim('7d   rolling: ') + windowLine(weeklyWindow,  'TOKEN_WATCH_WEEKLY_CAP'));
+  console.log(
+    '  ' + dim('Set TOKEN_WATCH_SESSION_CAP / TOKEN_WATCH_WEEKLY_CAP to see % of plan used.')
+  );
+
   console.log('');
   console.log(dim('Tip: /token-report sessions · /token-report models · /token-report today'));
 }

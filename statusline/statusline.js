@@ -7,18 +7,23 @@
  * Claude Code pipes a JSON object on stdin describing the current session.
  * We render a compact, single-line gauge:
  *
- *   ◈ Sonnet 4.6  ▕████░░░░░░▏ 38% ctx · 76k/200k  ·  $0.42  ·  ⬆12k ⬇340k
+ *   ◈ Sonnet 4.6  ▕████░░░░░░▏ 38% ctx · 76k/200k  ·  $0.42  ·  5h 1.2M
  *
  * Live context size is derived from the LAST assistant message in the
  * transcript (input + cache_read + cache_creation), which is exactly the
  * number of tokens that were resident in the model's context for that call.
  * This is robust to schema churn in the statusline payload itself.
+ *
+ * Environment overrides:
+ *   TOKEN_WATCH_CONTEXT_WINDOW  — override context window size in tokens
+ *   TOKEN_WATCH_SESSION_CAP     — token cap for 5h rolling window (optional)
  */
 
 const fs = require('fs');
 const path = require('path');
 const { colors, humanNumber, usd, bar, ratioColor } = require('../lib/format');
-const { contextWindow, family } = require('../lib/pricing');
+const { contextWindow } = require('../lib/pricing');
+const { allTranscripts, readTranscript, aggregate } = require('../lib/transcript');
 
 function readStdin() {
   try {
@@ -67,6 +72,26 @@ function sessionCost(input) {
   return null;
 }
 
+/**
+ * Aggregate total tokens across all transcripts in the last `windowMs` ms.
+ * Used to compute the rolling 5h subscription window for the statusline.
+ */
+function rollingTokens(windowMs) {
+  const cutoff = Date.now() - windowMs;
+  let total = 0;
+  for (const f of allTranscripts()) {
+    if (f.mtime < cutoff) continue; // transcripts sorted newest-first; could break early
+    const records = readTranscript(f.file);
+    for (const r of records) {
+      // Use timestamp from record when available, else file mtime as proxy
+      const ts = r.ts ? new Date(r.ts).getTime() : f.mtime;
+      if (ts < cutoff) continue;
+      total += r.input + r.output + r.cacheRead + r.cacheWrite;
+    }
+  }
+  return total;
+}
+
 function main() {
   let input = {};
   try { input = JSON.parse(readStdin() || '{}'); } catch { input = {}; }
@@ -97,6 +122,19 @@ function main() {
 
   const cost = sessionCost(input);
   if (cost != null) parts.push(colors.green(usd(cost)));
+
+  // Rolling 5h session window (subscription usage indicator)
+  const sessionCap = parseInt(process.env.TOKEN_WATCH_SESSION_CAP, 10);
+  const sessionToks = rollingTokens(5 * 3600 * 1000);
+  if (sessionToks > 0) {
+    let sessionPart = colors.dim('5h ') + colors.gray(humanNumber(sessionToks));
+    if (!isNaN(sessionCap) && sessionCap > 0) {
+      const pct = Math.round((sessionToks / sessionCap) * 100);
+      const col = ratioColor(sessionToks / sessionCap);
+      sessionPart = colors.dim('5h ') + col(humanNumber(sessionToks) + '/' + humanNumber(sessionCap) + ' (' + pct + '%)');
+    }
+    parts.push(sessionPart);
+  }
 
   process.stdout.write(parts.join(colors.gray('  ·  ')));
 }

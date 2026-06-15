@@ -7,7 +7,7 @@
  */
 
 const assert = require('assert');
-const { costOf, family, contextWindow } = require('../lib/pricing');
+const { costOf, family, contextWindow, PRICING } = require('../lib/pricing');
 const { aggregate } = require('../lib/transcript');
 const { humanNumber, usd, bar } = require('../lib/format');
 
@@ -20,16 +20,80 @@ function ok(name, fn) {
 
 console.log('token-watch smoke test\n');
 
-ok('family() matches by substring', () => {
+// ── Family matching ──────────────────────────────────────────────────────────
+
+ok('family() matches opus', () => {
   assert.strictEqual(family('claude-opus-4-8'), 'opus');
-  assert.strictEqual(family('claude-sonnet-4-6'), 'sonnet');
-  assert.strictEqual(family('claude-haiku-4-5'), 'haiku');
-  assert.strictEqual(family('something-new'), '_default');
+  assert.strictEqual(family('claude-opus-4'), 'opus');
 });
 
-ok('contextWindow() defaults to 200k', () => {
-  assert.strictEqual(contextWindow('claude-sonnet-4-6'), 200000);
+ok('family() matches sonnet', () => {
+  assert.strictEqual(family('claude-sonnet-4-6'), 'sonnet');
+  assert.strictEqual(family('claude-sonnet-4-7'), 'sonnet');
 });
+
+ok('family() matches haiku', () => {
+  assert.strictEqual(family('claude-haiku-4-5'), 'haiku');
+});
+
+ok('family() matches fable', () => {
+  assert.strictEqual(family('claude-fable-5'), 'fable');
+});
+
+ok('family() matches context-1m extended variant', () => {
+  assert.strictEqual(family('claude-sonnet-4-context-1m'), 'context-1m');
+});
+
+ok('family() falls back to _default for unknown', () => {
+  assert.strictEqual(family('something-new'), '_default');
+  assert.strictEqual(family(''), '_default');
+  assert.strictEqual(family(null), '_default');
+});
+
+// ── Pricing completeness ─────────────────────────────────────────────────────
+
+ok('PRICING has all expected families', () => {
+  for (const key of ['opus', 'sonnet', 'haiku', 'fable', '_default']) {
+    assert.ok(PRICING[key], 'missing pricing entry for ' + key);
+    assert.ok(typeof PRICING[key].input === 'number', key + '.input must be a number');
+    assert.ok(typeof PRICING[key].output === 'number', key + '.output must be a number');
+    assert.ok(typeof PRICING[key].cacheRead === 'number', key + '.cacheRead must be a number');
+    assert.ok(typeof PRICING[key].cacheWrite5m === 'number', key + '.cacheWrite5m must be a number');
+    assert.ok(typeof PRICING[key].cacheWrite1h === 'number', key + '.cacheWrite1h must be a number');
+  }
+});
+
+ok('Opus rates are higher than Sonnet rates', () => {
+  assert.ok(PRICING.opus.input > PRICING.sonnet.input, 'opus input should cost more');
+  assert.ok(PRICING.opus.output > PRICING.sonnet.output, 'opus output should cost more');
+});
+
+ok('Haiku rates are lower than Sonnet rates', () => {
+  assert.ok(PRICING.haiku.input < PRICING.sonnet.input, 'haiku input should cost less');
+  assert.ok(PRICING.haiku.output < PRICING.sonnet.output, 'haiku output should cost less');
+});
+
+// ── Context window ───────────────────────────────────────────────────────────
+
+ok('contextWindow() returns 200k for standard families', () => {
+  assert.strictEqual(contextWindow('claude-sonnet-4-6'), 200_000);
+  assert.strictEqual(contextWindow('claude-haiku-4-5'), 200_000);
+  assert.strictEqual(contextWindow('claude-opus-4'), 200_000);
+});
+
+ok('contextWindow() returns 1M for context-1m variants', () => {
+  assert.strictEqual(contextWindow('claude-sonnet-4-context-1m'), 1_000_000);
+});
+
+ok('contextWindow() respects TOKEN_WATCH_CONTEXT_WINDOW env override', () => {
+  const orig = process.env.TOKEN_WATCH_CONTEXT_WINDOW;
+  process.env.TOKEN_WATCH_CONTEXT_WINDOW = '500000';
+  assert.strictEqual(contextWindow('claude-sonnet-4-6'), 500_000);
+  if (orig === undefined) delete process.env.TOKEN_WATCH_CONTEXT_WINDOW;
+  else process.env.TOKEN_WATCH_CONTEXT_WINDOW = orig;
+});
+
+// ── Cost math ────────────────────────────────────────────────────────────────
 
 ok('costOf() bills input/output at Sonnet rates', () => {
   // 1M input @ $3 + 1M output @ $15 = $18 exactly.
@@ -37,7 +101,7 @@ ok('costOf() bills input/output at Sonnet rates', () => {
   assert.ok(Math.abs(c - 18) < 1e-9, 'expected 18, got ' + c);
 });
 
-ok('costOf() bills cache read + 1h write', () => {
+ok('costOf() bills cache read + 1h write at Sonnet rates', () => {
   // 1M cache read @ $0.30 + 1M 1h write @ $6 = $6.30
   const c = costOf('claude-sonnet-4-6', {
     cache_read_input_tokens: 1_000_000,
@@ -46,11 +110,31 @@ ok('costOf() bills cache read + 1h write', () => {
   assert.ok(Math.abs(c - 6.3) < 1e-9, 'expected 6.30, got ' + c);
 });
 
-ok('costOf() handles flat cache_creation_input_tokens', () => {
+ok('costOf() handles flat cache_creation_input_tokens (5m fallback)', () => {
   // Falls back to 5m write rate ($3.75) when only the flat field is present.
   const c = costOf('claude-sonnet-4-6', { cache_creation_input_tokens: 1_000_000 });
   assert.ok(Math.abs(c - 3.75) < 1e-9, 'expected 3.75, got ' + c);
 });
+
+ok('costOf() bills Haiku correctly', () => {
+  // 1M input @ $0.8 + 1M output @ $4 = $4.80
+  const c = costOf('claude-haiku-4-5', { input_tokens: 1_000_000, output_tokens: 1_000_000 });
+  assert.ok(Math.abs(c - 4.8) < 1e-9, 'expected 4.80, got ' + c);
+});
+
+ok('costOf() bills Opus correctly', () => {
+  // 1M input @ $15 + 1M output @ $75 = $90
+  const c = costOf('claude-opus-4', { input_tokens: 1_000_000, output_tokens: 1_000_000 });
+  assert.ok(Math.abs(c - 90) < 1e-9, 'expected 90, got ' + c);
+});
+
+ok('costOf() returns 0 for null/missing usage', () => {
+  assert.strictEqual(costOf('claude-sonnet-4-6', null), 0);
+  assert.strictEqual(costOf('claude-sonnet-4-6', undefined), 0);
+  assert.strictEqual(costOf('claude-sonnet-4-6', {}), 0);
+});
+
+// ── Aggregate ────────────────────────────────────────────────────────────────
 
 ok('aggregate() sums records', () => {
   const t = aggregate([
@@ -62,6 +146,34 @@ ok('aggregate() sums records', () => {
   assert.strictEqual(t.messages, 2);
   assert.ok(Math.abs(t.cost - 0.75) < 1e-9);
 });
+
+// ── Subscription window buckets ──────────────────────────────────────────────
+
+ok('rolling window bucket: sessions within 5h are included', () => {
+  const now = Date.now();
+  const sessions = [
+    { ts: new Date(now - 1 * 3600_000).toISOString(), input: 100, output: 50, cacheRead: 0, cacheWrite: 0, cost: 0.001, messages: 1 },
+    { ts: new Date(now - 6 * 3600_000).toISOString(), input: 999, output: 999, cacheRead: 0, cacheWrite: 0, cost: 9.99, messages: 10 },
+  ];
+  const cutoff5h = now - 5 * 3600_000;
+  const included = sessions.filter(s => new Date(s.ts).getTime() >= cutoff5h);
+  assert.strictEqual(included.length, 1);
+  assert.strictEqual(included[0].input, 100);
+});
+
+ok('rolling window bucket: sessions within 7d are included', () => {
+  const now = Date.now();
+  const sessions = [
+    { ts: new Date(now - 1 * 86400_000).toISOString(), input: 200, output: 100, cacheRead: 0, cacheWrite: 0, cost: 0.01, messages: 2 },
+    { ts: new Date(now - 8 * 86400_000).toISOString(), input: 999, output: 999, cacheRead: 0, cacheWrite: 0, cost: 9.99, messages: 5 },
+  ];
+  const cutoff7d = now - 7 * 86400_000;
+  const included = sessions.filter(s => new Date(s.ts).getTime() >= cutoff7d);
+  assert.strictEqual(included.length, 1);
+  assert.strictEqual(included[0].input, 200);
+});
+
+// ── Formatters ───────────────────────────────────────────────────────────────
 
 ok('humanNumber() compacts', () => {
   assert.strictEqual(humanNumber(950), '950');

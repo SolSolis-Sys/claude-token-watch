@@ -28,6 +28,7 @@ const path = require('path');
 const { colors, humanNumber, usd, bar, ratioColor } = require('../lib/format');
 const { contextWindow } = require('../lib/pricing');
 const { resolveCaps, rollingUsage } = require('../lib/subscription');
+const { getUsage } = require('../lib/usage-api');
 
 function readStdin() {
   try {
@@ -94,7 +95,7 @@ function windowGauge(label, tokens, cap) {
   return colors.dim(label + ' ') + colors.gray(humanNumber(tokens));
 }
 
-function main() {
+async function main() {
   let input = {};
   try { input = JSON.parse(readStdin() || '{}'); } catch { input = {}; }
 
@@ -125,15 +126,47 @@ function main() {
   const cost = sessionCost(input);
   if (cost != null) parts.push(colors.green(usd(cost)));
 
-  // Rolling subscription windows: 5h session + 7d weekly, in one pass.
+  // Rolling subscription windows: prefer real API data, fallback to heuristic.
   const caps = resolveCaps();
   const usage = rollingUsage();
-  const sessionGauge = windowGauge('5h', usage.session5h, caps.session5h);
-  if (sessionGauge) parts.push(sessionGauge);
-  const weeklyGauge = windowGauge('7d', usage.weekly, caps.weekly);
-  if (weeklyGauge) parts.push(weeklyGauge);
+
+  // Try to fetch real utilization % from the Anthropic usage API.
+  // If unavailable (no token, network error, timeout), fall back silently to
+  // the heuristic caps from subscription.js.
+  const apiUsage = await getUsage().catch(() => null);
+
+  if (apiUsage && apiUsage.session5hPct !== null) {
+    // Real data: render gauge directly from API percentage, ignore heuristic cap.
+    const pct = apiUsage.session5hPct;
+    const col = ratioColor(pct);
+    parts.push(
+      colors.dim('5h ') +
+      '▕' + col(bar(pct, 5)) + '▏ ' +
+      col(Math.round(pct * 100) + '%')
+    );
+  } else {
+    const sessionGauge = windowGauge('5h', usage.session5h, caps.session5h);
+    if (sessionGauge) parts.push(sessionGauge);
+  }
+
+  if (apiUsage && apiUsage.weekly7dPct !== null) {
+    // Real data: render gauge directly from API percentage.
+    const pct = apiUsage.weekly7dPct;
+    const col = ratioColor(pct);
+    parts.push(
+      colors.dim('7d ') +
+      '▕' + col(bar(pct, 5)) + '▏ ' +
+      col(Math.round(pct * 100) + '%')
+    );
+  } else {
+    const weeklyGauge = windowGauge('7d', usage.weekly, caps.weekly);
+    if (weeklyGauge) parts.push(weeklyGauge);
+  }
 
   process.stdout.write(parts.join(colors.gray('  ·  ')));
 }
 
-main();
+main().catch(() => {
+  // Fallback: if async main throws unexpectedly, render minimal output.
+  process.stdout.write(colors ? colors.dim('token-watch error') : 'token-watch error');
+});

@@ -21,6 +21,7 @@ const os = require('os');
 const path = require('path');
 const { colors, humanNumber, usd } = require('../lib/format');
 const { readTranscript, aggregate, allTranscripts } = require('../lib/transcript');
+const { getUsage } = require('../lib/usage-api');
 
 const { bold, cyan, green, dim, gray, yellow } = colors;
 
@@ -127,7 +128,7 @@ function windowLine(t, capEnvVar) {
   return green(usd(t.cost)) + '  ' + tokStr + '  ' + gray(t.messages + ' msg');
 }
 
-function main() {
+async function main() {
   const mode = (process.argv[2] || 'summary').toLowerCase();
   const sessions = mergedSessions();
 
@@ -193,18 +194,44 @@ function main() {
   console.log(head('All time  ' + dim('(' + sessions.length + ' sessions)')));
   console.log('  ' + totalsLine(all));
 
-  // Subscription windows
-  const sessionWindow = rollingWindow(sessions, Date.now() - 5 * 3600_000);
-  const weeklyWindow  = rollingWindow(sessions, Date.now() - 7 * 86400_000);
+  // Subscription windows — prefer real API data if available
+  const apiUsage = await getUsage().catch(() => null);
   console.log(head('Subscription windows'));
-  console.log('  ' + dim('5h   rolling: ') + windowLine(sessionWindow, 'TOKEN_WATCH_SESSION_CAP'));
-  console.log('  ' + dim('7d   rolling: ') + windowLine(weeklyWindow,  'TOKEN_WATCH_WEEKLY_CAP'));
-  console.log(
-    '  ' + dim('Set TOKEN_WATCH_SESSION_CAP / TOKEN_WATCH_WEEKLY_CAP to see % of plan used.')
-  );
+
+  if (apiUsage && (apiUsage.session5hPct !== null || apiUsage.weekly7dPct !== null)) {
+    // Real data from Anthropic API
+    if (apiUsage.session5hPct !== null) {
+      const pct5h = Math.round(apiUsage.session5hPct * 100);
+      const resets5h = apiUsage.resetsSession
+        ? dim('  resets ' + new Date(apiUsage.resetsSession).toLocaleTimeString())
+        : '';
+      console.log('  ' + dim('5h   real:    ') + cyan(pct5h + '%') + resets5h);
+    }
+    if (apiUsage.weekly7dPct !== null) {
+      const pct7d = Math.round(apiUsage.weekly7dPct * 100);
+      const resets7d = apiUsage.resetsWeekly
+        ? dim('  resets ' + new Date(apiUsage.resetsWeekly).toLocaleDateString())
+        : '';
+      console.log('  ' + dim('7d   real:    ') + cyan(pct7d + '%') + resets7d);
+    }
+    console.log('  ' + dim('Source: api.anthropic.com/api/oauth/usage (live)'));
+  } else {
+    // Fallback to heuristic rolling totals
+    const sessionWindow = rollingWindow(sessions, Date.now() - 5 * 3600_000);
+    const weeklyWindow  = rollingWindow(sessions, Date.now() - 7 * 86400_000);
+    console.log('  ' + dim('5h   rolling: ') + windowLine(sessionWindow, 'TOKEN_WATCH_SESSION_CAP'));
+    console.log('  ' + dim('7d   rolling: ') + windowLine(weeklyWindow,  'TOKEN_WATCH_WEEKLY_CAP'));
+    console.log(
+      '  ' + dim('Set TOKEN_WATCH_SESSION_CAP / TOKEN_WATCH_WEEKLY_CAP to see % of plan used.')
+    );
+    console.log('  ' + dim('(API usage unavailable — using local heuristic)'));
+  }
 
   console.log('');
   console.log(dim('Tip: /token-report sessions · /token-report models · /token-report today'));
 }
 
-main();
+main().catch((e) => {
+  console.error('token-watch report error:', e.message);
+  process.exit(1);
+});

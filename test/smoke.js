@@ -75,10 +75,12 @@ ok('Haiku rates are lower than Sonnet rates', () => {
 
 // ── Context window ───────────────────────────────────────────────────────────
 
-ok('contextWindow() returns 200k for standard families', () => {
-  assert.strictEqual(contextWindow('claude-sonnet-4-6'), 200_000);
+ok('contextWindow() returns per-family values', () => {
+  // Sonnet and Opus = 1M context
+  assert.strictEqual(contextWindow('claude-sonnet-4-6'), 1_000_000);
+  assert.strictEqual(contextWindow('claude-opus-4'), 1_000_000);
+  // Haiku = 200k context
   assert.strictEqual(contextWindow('claude-haiku-4-5'), 200_000);
-  assert.strictEqual(contextWindow('claude-opus-4'), 200_000);
 });
 
 ok('contextWindow() returns 1M for context-1m variants', () => {
@@ -117,15 +119,15 @@ ok('costOf() handles flat cache_creation_input_tokens (5m fallback)', () => {
 });
 
 ok('costOf() bills Haiku correctly', () => {
-  // 1M input @ $0.8 + 1M output @ $4 = $4.80
+  // 1M input @ $1.00 + 1M output @ $5.00 = $6.00
   const c = costOf('claude-haiku-4-5', { input_tokens: 1_000_000, output_tokens: 1_000_000 });
-  assert.ok(Math.abs(c - 4.8) < 1e-9, 'expected 4.80, got ' + c);
+  assert.ok(Math.abs(c - 6) < 1e-9, 'expected 6.00, got ' + c);
 });
 
 ok('costOf() bills Opus correctly', () => {
-  // 1M input @ $15 + 1M output @ $75 = $90
+  // 1M input @ $5.00 + 1M output @ $25.00 = $30.00
   const c = costOf('claude-opus-4', { input_tokens: 1_000_000, output_tokens: 1_000_000 });
-  assert.ok(Math.abs(c - 90) < 1e-9, 'expected 90, got ' + c);
+  assert.ok(Math.abs(c - 30) < 1e-9, 'expected 30.00, got ' + c);
 });
 
 ok('costOf() returns 0 for null/missing usage', () => {

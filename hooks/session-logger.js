@@ -12,6 +12,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { readTranscript, aggregate } = require('../lib/transcript');
+const { detectPlan, planCacheStale } = require('../lib/subscription');
 
 function readStdin() {
   try { return fs.readFileSync(0, 'utf8'); } catch { return ''; }
@@ -53,6 +54,15 @@ function main() {
   } catch {
     // Never fail a session over telemetry.
   }
+
+  // Auto-detect the subscription plan (Pro/Max) at most once per TTL, so the
+  // statusline can show real % gauges without the user setting anything.
+  try {
+    if (planCacheStale()) detectPlan();
+  } catch {
+    // Plan detection is best-effort; never fail a session over it.
+  }
+
   process.exit(0);
 }
 

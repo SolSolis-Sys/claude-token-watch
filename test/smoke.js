@@ -177,56 +177,56 @@ ok('rolling window bucket: sessions within 7d are included', () => {
 
 // ── Subscription caps resolution ─────────────────────────────────────────────
 
-const { resolveCaps, PLANS } = require('../lib/subscription');
+const { computeCaps, PLANS, tierToPlan } = require('../lib/subscription');
 
-function withEnv(vars, fn) {
-  const keys = ['TOKEN_WATCH_PLAN', 'TOKEN_WATCH_SESSION_CAP', 'TOKEN_WATCH_WEEKLY_CAP'];
-  const orig = {};
-  for (const k of keys) orig[k] = process.env[k];
-  for (const k of keys) delete process.env[k];
-  Object.assign(process.env, vars);
-  try { return fn(); }
-  finally {
-    for (const k of keys) {
-      if (orig[k] === undefined) delete process.env[k];
-      else process.env[k] = orig[k];
-    }
-  }
-}
-
-ok('resolveCaps() returns no caps when nothing configured', () => {
-  withEnv({}, () => {
-    const c = resolveCaps();
-    assert.strictEqual(c.plan, null);
-    assert.strictEqual(c.session5h, 0);
-    assert.strictEqual(c.weekly, 0);
-  });
+ok('tierToPlan() maps Max 20x / 5x / Pro tiers', () => {
+  assert.strictEqual(tierToPlan('{"subscriptionType":"max_20x"}'), 'max20');
+  assert.strictEqual(tierToPlan('Claude Max 20x'), 'max20');
+  assert.strictEqual(tierToPlan('{"tier":"max_5x"}'), 'max5');
+  assert.strictEqual(tierToPlan('Max 5x'), 'max5');
+  assert.strictEqual(tierToPlan('max'), 'max5');
+  assert.strictEqual(tierToPlan('Claude Pro'), 'pro');
+  assert.strictEqual(tierToPlan('free'), null);
+  assert.strictEqual(tierToPlan(''), null);
+  assert.strictEqual(tierToPlan(null), null);
 });
 
-ok('resolveCaps() applies plan presets', () => {
-  withEnv({ TOKEN_WATCH_PLAN: 'max5' }, () => {
-    const c = resolveCaps();
-    assert.strictEqual(c.plan, 'max5');
-    assert.strictEqual(c.session5h, PLANS.max5.session5h);
-    assert.strictEqual(c.weekly, PLANS.max5.weekly);
-  });
+ok('computeCaps() returns no caps when nothing configured', () => {
+  const c = computeCaps({});
+  assert.strictEqual(c.plan, null);
+  assert.strictEqual(c.session5h, 0);
+  assert.strictEqual(c.weekly, 0);
 });
 
-ok('resolveCaps() env caps override the plan preset', () => {
-  withEnv({ TOKEN_WATCH_PLAN: 'pro', TOKEN_WATCH_SESSION_CAP: '12345', TOKEN_WATCH_WEEKLY_CAP: '67890' }, () => {
-    const c = resolveCaps();
-    assert.strictEqual(c.session5h, 12345);
-    assert.strictEqual(c.weekly, 67890);
-  });
+ok('computeCaps() applies env plan presets', () => {
+  const c = computeCaps({ envPlan: 'max5' });
+  assert.strictEqual(c.plan, 'max5');
+  assert.strictEqual(c.session5h, PLANS.max5.session5h);
+  assert.strictEqual(c.weekly, PLANS.max5.weekly);
 });
 
-ok('resolveCaps() ignores unknown plan but honors env caps', () => {
-  withEnv({ TOKEN_WATCH_PLAN: 'bogus', TOKEN_WATCH_SESSION_CAP: '500' }, () => {
-    const c = resolveCaps();
-    assert.strictEqual(c.plan, null);
-    assert.strictEqual(c.session5h, 500);
-    assert.strictEqual(c.weekly, 0);
-  });
+ok('computeCaps() applies auto-detected (cached) plan when no env plan', () => {
+  const c = computeCaps({ cachedPlan: 'pro' });
+  assert.strictEqual(c.plan, 'pro');
+  assert.strictEqual(c.session5h, PLANS.pro.session5h);
+});
+
+ok('computeCaps() env plan overrides cached plan', () => {
+  const c = computeCaps({ envPlan: 'max20', cachedPlan: 'pro' });
+  assert.strictEqual(c.plan, 'max20');
+});
+
+ok('computeCaps() env caps override the plan preset', () => {
+  const c = computeCaps({ envPlan: 'pro', envSession: 12345, envWeekly: 67890 });
+  assert.strictEqual(c.session5h, 12345);
+  assert.strictEqual(c.weekly, 67890);
+});
+
+ok('computeCaps() ignores unknown plan but honors env caps', () => {
+  const c = computeCaps({ envPlan: 'bogus', envSession: 500 });
+  assert.strictEqual(c.plan, null);
+  assert.strictEqual(c.session5h, 500);
+  assert.strictEqual(c.weekly, 0);
 });
 
 ok('PLANS scale with tier (max20 > max5 > pro)', () => {

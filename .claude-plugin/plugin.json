@@ -1,6 +1,6 @@
 {
   "name": "token-watch",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Live token, context-window and cost monitoring for Claude Code — statusline gauge, auto-compact suggestions, and usage reports. Zero dependencies.",
   "author": {
     "name": "SolSolis-Sys",

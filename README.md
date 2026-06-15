@@ -37,7 +37,7 @@ Claude Code is powerful, but it's easy to lose track of two things:
 | 📊 **Statusline gauge** | Live model, context-window fill bar (green → yellow → red), and session cost. |
 | 🧹 **Auto-compact nudge** | When context crosses a threshold (default 80%), a one-line message suggests `/compact`. Never blocks. |
 | 🧾 **`/token-report`** | Cost & token usage for today, the last 7 days, and all time — plus per-session, per-model, and subscription-window breakdowns. |
-| ⏱️ **Subscription windows** | Rolling 5h session and 7-day weekly token usage, with optional caps (`TOKEN_WATCH_SESSION_CAP` / `TOKEN_WATCH_WEEKLY_CAP`) displayed as `x / cap (y%)`. |
+| ⏱️ **Subscription gauges** | Inline 5h-session and 7-day-weekly gauges in the statusline. Plan (Pro/Max) is **auto-detected** from `claude auth status`; caps are tunable. |
 | 🗃️ **Durable history** | A tiny one-line-per-session log survives transcript pruning. |
 | 🔒 **Local only** | Reads `~/.claude/projects/**` transcripts and the statusline payload. No network, no telemetry. |
 
@@ -136,23 +136,38 @@ npx claude-token-watch
 |---|---|---|
 | `TOKEN_WATCH_COMPACT_PCT` | `80` | Context fill % that triggers the `/compact` nudge. |
 | `TOKEN_WATCH_CONTEXT_WINDOW` | _(model-derived)_ | Override context window size (tokens) for the statusline gauge. |
-| `TOKEN_WATCH_SESSION_CAP` | _(unset)_ | Token cap for the 5-hour rolling session window. Set to a number to display `x / cap (y%)`. |
-| `TOKEN_WATCH_WEEKLY_CAP` | _(unset)_ | Token cap for the 7-day rolling window. Same display logic. |
+| `TOKEN_WATCH_PLAN` | _(auto-detected)_ | `pro` \| `max5` \| `max20`. Selects the cap presets for the 5h/7d gauges. Overrides auto-detection. |
+| `TOKEN_WATCH_SESSION_CAP` | _(from plan)_ | Token cap for the 5-hour rolling window. Overrides the plan preset. |
+| `TOKEN_WATCH_WEEKLY_CAP` | _(from plan)_ | Token cap for the 7-day rolling window. Overrides the plan preset. |
 | `NO_COLOR` | – | Set to disable ANSI colors. |
 
-#### Plan presets (optional)
+#### Subscription gauges (5h / 7d)
 
-Set `TOKEN_WATCH_SESSION_CAP` / `TOKEN_WATCH_WEEKLY_CAP` to match your Anthropic plan. Anthropic does not publish exact token limits, so these are community estimates — adjust to your usage:
+The statusline shows two rolling-window gauges — `5h ▕███░░▏ 67%` and
+`7d ▕█████▏ 91%` — for the Anthropic session and weekly limits.
 
-| Plan | Suggested `SESSION_CAP` | Suggested `WEEKLY_CAP` |
+- **Plan auto-detection.** On `SessionEnd`, token-watch runs `claude auth status
+  --json` (reads **only** the `subscriptionType` field — never tokens or email),
+  maps it to a plan, and caches the result in
+  `~/.claude/token-watch/plan-cache.json` (refreshed at most once per 24h). You
+  don't have to configure anything. Set `TOKEN_WATCH_PLAN` to override.
+- **The metric** is `input + output + cacheWrite`, **excluding `cache_read`**:
+  cache reads are the model re-reading its own resident context each turn and
+  dwarf real consumption ~10-50×, which would make the gauge meaningless.
+- **Caps are estimates.** Anthropic does not publish per-window token limits, and
+  there is no safe API to read the live `/usage` numbers (the status-bar endpoint
+  is undocumented; reverse-engineering it is discouraged). The presets below are
+  heuristics — tune via `TOKEN_WATCH_SESSION_CAP` / `TOKEN_WATCH_WEEKLY_CAP`.
+
+| Plan | `session5h` preset | `weekly` preset |
 |---|---|---|
-| Pro | `500000` | `2000000` |
-| Max 5× | `2500000` | `10000000` |
-| Max 20× | `10000000` | `40000000` |
+| `pro` | `3,000,000` | `50,000,000` |
+| `max5` | `15,000,000` | `250,000,000` |
+| `max20` | `60,000,000` | `1,000,000,000` |
 
 Pricing lives in [`lib/pricing.js`](lib/pricing.js) and is matched by model-family
-substring, so new point releases inherit the right rates automatically. Adjust it
-there if your plan differs.
+substring, so new point releases inherit the right rates automatically. Plan caps
+live in [`lib/subscription.js`](lib/subscription.js).
 
 ## Project layout
 

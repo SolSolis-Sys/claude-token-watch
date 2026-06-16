@@ -312,6 +312,109 @@ const cacheBackup = backupCacheFile();
     else process.env.TOKEN_WATCH_TLS_STRICT = origStrict;
   })();
 
+  // ── C) repeated failures persist a growing backoff (root cause: frozen
+  //      gauge from unthrottled retries hammering the API every 60s from
+  //      concurrent re-spawned statusline processes) ───────────────────────
+  await (async () => {
+    restoreCacheFile(undefined);
+    const staleData = { session5hPct: 0.49, weekly7dPct: 0.19, resetsSession: null, resetsWeekly: null };
+    // Stale = older than CACHE_TTL_MS so getUsage() attempts a fresh fetch.
+    writeDiskCache({ data: staleData, fetchedAt: Date.now() - 120_000, tlsInsecureOk: false, failCount: 0, nextRetryAt: 0 });
+
+    await withFakeCredentialsAsync('tok-G', async () => {
+      await withStubbedHttpsAsync(() => ({ statusCode: 429, body: '{}' }), async () => {
+        const api = freshUsageApiModule();
+        await api.getUsage();
+        ok('first failure persists failCount=1 and a future nextRetryAt', () => {
+          const onDisk = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'));
+          assert.strictEqual(onDisk.failCount, 1);
+          assert.ok(onDisk.nextRetryAt > Date.now(), 'nextRetryAt must be in the future');
+        });
+
+        const afterFirst = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'));
+        // Force the disk fetchedAt stale again so getUsage() would normally retry,
+        // but nextRetryAt should still gate it off.
+        afterFirst.fetchedAt = Date.now() - 120_000;
+        fs.writeFileSync(CACHE_FILE, JSON.stringify(afterFirst));
+
+        let httpCalledAgain = false;
+        await withStubbedHttpsAsync(() => { httpCalledAgain = true; return { statusCode: 429, body: '{}' }; }, async () => {
+          const api2 = freshUsageApiModule();
+          const result = await api2.getUsage();
+          ok('active backoff window skips the HTTP retry entirely', () => {
+            assert.strictEqual(httpCalledAgain, false, 'must not retry while nextRetryAt is in the future');
+            assert.deepStrictEqual(result, staleData, 'stale data still returned while backing off');
+          });
+        });
+      });
+    });
+  })();
+
+  // ── C) a successful fetch resets the backoff to zero ─────────────────────
+  await (async () => {
+    restoreCacheFile(undefined);
+    writeDiskCache({
+      data: { session5hPct: 0.49, weekly7dPct: 0.19, resetsSession: null, resetsWeekly: null },
+      fetchedAt: Date.now() - 120_000,
+      tlsInsecureOk: false,
+      failCount: 3,
+      nextRetryAt: 0, // backoff already elapsed, so this fetch is allowed through
+    });
+
+    const apiBody = JSON.stringify({
+      five_hour: { utilization: 55, resets_at: null },
+      seven_day: { utilization: 30, resets_at: null },
+    });
+
+    await withFakeCredentialsAsync('tok-H', async () => {
+      await withStubbedHttpsAsync(() => ({ statusCode: 200, body: apiBody }), async () => {
+        const api = freshUsageApiModule();
+        await api.getUsage();
+        ok('successful fetch resets failCount and nextRetryAt to zero', () => {
+          const onDisk = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'));
+          assert.strictEqual(onDisk.failCount, 0);
+          assert.strictEqual(onDisk.nextRetryAt, 0);
+          assert.strictEqual(onDisk.data.session5hPct, 0.55);
+        });
+      });
+    });
+  })();
+
+  // ── C) backoff delay grows exponentially and is capped ───────────────────
+  await (async () => {
+    const api = freshUsageApiModule();
+    ok('backoff delay grows with failCount and is capped at BACKOFF_MAX_MS', () => {
+      const d0 = api._backoffDelayMs(0);
+      const d1 = api._backoffDelayMs(1);
+      const d2 = api._backoffDelayMs(2);
+      assert.ok(d1 > d0, 'delay must increase after first failure');
+      assert.ok(d2 > d1, 'delay must keep increasing on consecutive failures');
+      const dHuge = api._backoffDelayMs(1000);
+      assert.strictEqual(dHuge, api.BACKOFF_MAX_MS, 'delay must be capped, never unbounded');
+    });
+  })();
+
+  // ── D) disk cache writes are atomic (temp file + rename, no .tmp leftover) ─
+  await (async () => {
+    restoreCacheFile(undefined);
+    const apiBody = JSON.stringify({
+      five_hour: { utilization: 12, resets_at: null },
+      seven_day: { utilization: 34, resets_at: null },
+    });
+
+    await withFakeCredentialsAsync('tok-I', async () => {
+      await withStubbedHttpsAsync(() => ({ statusCode: 200, body: apiBody }), async () => {
+        const api = freshUsageApiModule();
+        await api.getUsage();
+        ok('atomic write leaves no leftover .tmp files in the cache dir', () => {
+          const leftovers = fs.readdirSync(CACHE_DIR).filter((f) => f.includes('.tmp-'));
+          assert.strictEqual(leftovers.length, 0, 'no .tmp-* file should remain after a write');
+          assert.ok(fs.existsSync(CACHE_FILE));
+        });
+      });
+    });
+  })();
+
   restoreCacheFile(cacheBackup);
   console.log('\n' + passed + ' checks passed.');
 })().catch((err) => {

@@ -13,6 +13,8 @@ A statusline gauge, gentle auto-compact nudges, and a usage report — in one ti
 
 </div>
 
+> ⚠️ **Alpha — work in progress. Use at your own risk.** Expect rough edges. Found a bug or have a suggestion? Please [open an issue](https://github.com/SolSolis-Sys/claude-token-watch/issues).
+
 ---
 
 ```

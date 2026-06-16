@@ -15,6 +15,8 @@ A statusline gauge, gentle auto-compact nudges, and a usage report — in one ti
 
 > ⚠️ **Alpha — work in progress. Use at your own risk.** Expect rough edges. Found a bug or have a suggestion? Please [open an issue](https://github.com/SolSolis-Sys/claude-token-watch/issues).
 
+> 🔌 **Not affiliated with Anthropic.** This is an independent, unofficial tool that reads local Claude Code data and Anthropic's public OAuth usage endpoint (see [How it works](#how-it-works)) — not a product of or endorsed by Anthropic.
+
 ---
 
 ```

@@ -30,7 +30,7 @@ Claude Code is powerful, but it's easy to lose track of two things:
 1. **How much of your context window is left** before quality degrades or an auto-compact surprises you.
 2. **What a session actually costs.**
 
-`token-watch` surfaces both, reads only data Claude Code already produces locally, and **never phones home**. Zero dependencies, ~400 lines of plain Node.
+`token-watch` surfaces both, mostly from data Claude Code already produces locally. The one exception is the subscription gauges, which read your real `/usage` percentage from Anthropic's OAuth endpoint — nothing is ever logged or sent elsewhere. Zero dependencies, ~400 lines of plain Node.
 
 ## Features
 
@@ -41,7 +41,7 @@ Claude Code is powerful, but it's easy to lose track of two things:
 | 🧾 **`/token-report`** | Cost & token usage for today, the last 7 days, and all time — plus per-session, per-model, and subscription-window breakdowns. |
 | ⏱️ **Subscription gauges** | Inline 5h-session and 7-day-weekly gauges in the statusline. Plan (Pro/Max) is **auto-detected** from `claude auth status`; caps are tunable. |
 | 🗃️ **Durable history** | A tiny one-line-per-session log survives transcript pruning. |
-| 🔒 **Local only** | Reads `~/.claude/projects/**` transcripts and the statusline payload. No network, no telemetry. |
+| 🔒 **Local-first, no telemetry** | Reads `~/.claude/projects/**` transcripts and the statusline payload. The only outbound call is the read-only OAuth `/usage` lookup for the subscription gauges (same data as Claude Code's own `/usage`) — never logged, never sent anywhere else. |
 
 ## How it works
 
@@ -58,9 +58,17 @@ Each assistant turn records the **real** token usage:
 - The **statusline** computes resident context as `input + cache_read + cache_creation` from the latest turn — exactly what the model held that call.
 - The **Stop hook** checks that ratio and nudges you toward `/compact` when it's high.
 - The **SessionEnd hook** appends an aggregated record to `~/.claude/token-watch/usage.jsonl`.
+- The **5h/7d subscription gauges** read the **real `%`** from Anthropic's OAuth
+  usage endpoint (`GET https://api.anthropic.com/api/oauth/usage`) — the same
+  source that backs the `/usage` command in Claude Code. The result is cached
+  on disk for 60s (`~/.claude/token-watch/usage-cache.json`) since the
+  statusline is a brand-new process on every render. The OAuth token is read
+  from `~/.claude/.credentials.json` and is **never logged or written anywhere**.
 - **`/token-report`** merges that durable log with live transcripts and prices it using the June 2026 rate card.
 
-No token API is required — these are the true counts Claude Code already records.
+No token API is required for cost/context tracking — those are the true counts
+Claude Code already records locally. The subscription gauges are the one
+feature that does call a live Anthropic endpoint (read-only, OAuth-authenticated).
 
 ## Install
 
@@ -141,6 +149,7 @@ npx claude-token-watch
 | `TOKEN_WATCH_PLAN` | _(auto-detected)_ | `pro` \| `max5` \| `max20`. Selects the cap presets for the 5h/7d gauges. Overrides auto-detection. |
 | `TOKEN_WATCH_SESSION_CAP` | _(from plan)_ | Token cap for the 5-hour rolling window. Overrides the plan preset. |
 | `TOKEN_WATCH_WEEKLY_CAP` | _(from plan)_ | Token cap for the 7-day rolling window. Overrides the plan preset. |
+| `TOKEN_WATCH_TLS_STRICT` | _(unset)_ | Set to `1` to disable the automatic non-strict TLS fallback used when Node can't verify Anthropic's certificate chain (notably on Windows). Default: fallback active, with a one-time stderr warning. |
 | `NO_COLOR` | – | Set to disable ANSI colors. |
 
 #### Subscription gauges (5h / 7d)
@@ -148,37 +157,49 @@ npx claude-token-watch
 The statusline shows two rolling-window gauges — `5h ▕███░░▏ 67%` and
 `7d ▕█████▏ 91%` — for the Anthropic session and weekly limits.
 
-- **Plan auto-detection.** On `SessionEnd`, token-watch runs `claude auth status
-  --json` (reads **only** the `subscriptionType` field — never tokens or email),
-  maps it to a plan, and caches the result in
-  `~/.claude/token-watch/plan-cache.json` (refreshed at most once per 24h). You
-  don't have to configure anything. Set `TOKEN_WATCH_PLAN` to override.
-- **The metric** is `input + output + cacheWrite`, **excluding `cache_read`**:
-  cache reads are the model re-reading its own resident context each turn and
-  dwarf real consumption ~10-50×, which would make the gauge meaningless.
-> ### ⚠️ These percentages are estimates, not your exact `/usage`
+- **Real percentage, read live.** token-watch calls Anthropic's OAuth usage
+  endpoint (`GET https://api.anthropic.com/api/oauth/usage`, Bearer token from
+  `~/.claude/.credentials.json`) — the **same source** behind the `/usage`
+  command in Claude Code. The result is the actual `five_hour.utilization` /
+  `seven_day.utilization` percentage, cached on disk for 60s. The OAuth token
+  is never logged or written anywhere.
+- **Heuristic fallback only.** If the API is unreachable (rate-limited,
+  offline, timeout, no credentials), token-watch first serves the last known
+  *real* value from the disk cache, even if stale. Only when no cached real
+  value exists at all does it fall back to a **heuristic estimate** based on
+  community-derived Pro/Max caps — in that case the gauge is prefixed with
+  `~` (e.g. `~5h 53%`) so you can tell at a glance that it's an approximation,
+  not Anthropic's real number.
+- **Plan auto-detection** (used only for the heuristic fallback). On
+  `SessionEnd`, token-watch runs `claude auth status --json` (reads **only**
+  the `subscriptionType` field — never tokens or email), maps it to a plan,
+  and caches the result in `~/.claude/token-watch/plan-cache.json` (refreshed
+  at most once per 24h). Set `TOKEN_WATCH_PLAN` to override.
+- **The heuristic metric** is `input + output + cacheWrite`, **excluding
+  `cache_read`**: cache reads are the model re-reading its own resident
+  context each turn and dwarf real consumption ~10-50×, which would make the
+  fallback gauge meaningless.
+
+> ### Real `/usage` by default, heuristic `~` only as a fallback
 >
-> **Why they don't match Claude's official `/usage` panel exactly:**
+> The gauges read Anthropic's real usage endpoint whenever it's reachable —
+> not an estimate. The heuristic path (prefixed `~`) only kicks in when the
+> API can't be reached and no recent real reading is cached. Even then it's
+> an honest approximation, not a guess pulled from nowhere:
+>
 > 1. **Anthropic does not publish per-window limits in tokens.** The Pro/Max 5h
->    and weekly caps are not documented as numbers, so the denominators here are
->    community heuristics, not official ceilings.
-> 2. **There is no safe way to read the live numbers.** The `/usage` status-bar
->    data comes from an **undocumented** internal endpoint; reverse-engineering it
->    would mean handling your OAuth credentials and is explicitly discouraged
->    (see [anthropics/claude-code#44328](https://github.com/anthropics/claude-code/issues/44328)).
->    `~/.claude/stats-cache.json` only holds message/session counts — no limits.
-> 3. **The metric is an approximation.** We count `input + output + cacheWrite`
->    and exclude `cache_read` (context re-reads), which is a *proxy* for real
->    consumption, not Anthropic's exact accounting.
+>    and weekly caps used by the fallback are not documented as numbers, so the
+>    denominators are community heuristics, not official ceilings.
+> 2. **The fallback metric is a proxy.** It counts `input + output + cacheWrite`
+>    and excludes `cache_read` (context re-reads) — a reasonable approximation
+>    of real consumption, not Anthropic's exact accounting.
 >
-> **What we do safely:** auto-detect your *plan* (Pro/Max) from
-> `claude auth status` and apply best-effort caps. Treat the gauges as a
-> "roughly how heavy is my window" signal, not a billing-accurate figure.
->
-> **We're actively studying this.** If a safe, supported way to read the real
-> limits appears, we'll calibrate the gauges precisely in a future release. Until
-> then you can pin your own caps via `TOKEN_WATCH_SESSION_CAP` /
-> `TOKEN_WATCH_WEEKLY_CAP`.
+> Treat the `~`-prefixed gauge as a "roughly how heavy is my window" signal
+> for the rare cases the API is unavailable. You can pin your own fallback
+> caps via `TOKEN_WATCH_SESSION_CAP` / `TOKEN_WATCH_WEEKLY_CAP`, and disable
+> the TLS fallback used on some Windows setups via `TOKEN_WATCH_TLS_STRICT=1`.
+
+Heuristic fallback caps, used only when the real endpoint is unavailable:
 
 | Plan | `session5h` preset | `weekly` preset | Source |
 |---|---|---|---|

@@ -145,7 +145,10 @@ async function main() {
       col(Math.round(pct * 100) + '%')
     );
   } else {
-    const sessionGauge = windowGauge('5h', usage.session5h, caps.session5h);
+    // No real API data (or it expired without a fallback): fall back to the
+    // heuristic estimate. Prefix with '~' so the heuristic is visually
+    // distinguishable from the real (even if stale) API-backed gauge above.
+    const sessionGauge = windowGauge('~5h', usage.session5h, caps.session5h);
     if (sessionGauge) parts.push(sessionGauge);
   }
 
@@ -159,7 +162,8 @@ async function main() {
       col(Math.round(pct * 100) + '%')
     );
   } else {
-    const weeklyGauge = windowGauge('7d', usage.weekly, caps.weekly);
+    // Heuristic fallback (no real API data) — same '~' convention as above.
+    const weeklyGauge = windowGauge('~7d', usage.weekly, caps.weekly);
     if (weeklyGauge) parts.push(weeklyGauge);
   }
 

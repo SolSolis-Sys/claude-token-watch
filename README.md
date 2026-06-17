@@ -249,4 +249,4 @@ node test/guard-probe.js        # fire the compact nudge
 
 [MIT](LICENSE) © 2026 SolSolis-Sys
 
-<div align="center"><sub>Built with Claude Code · part of the NOWS toolset</sub></div>
+<div align="center"><sub>Built with Claude Code · part of the SolSolis toolset</sub></div>

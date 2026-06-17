@@ -88,9 +88,11 @@ ok('session5hPct at 85% → emits additionalContext + systemMessage', () => {
   assert.strictEqual(exitCode, 0);
   assert.ok(stdout.trim().length > 0, 'expected non-empty output');
   const out = JSON.parse(stdout);
-  assert.ok(out.additionalContext, 'additionalContext present');
+  assert.ok(out.hookSpecificOutput, 'hookSpecificOutput present');
+  assert.ok(out.hookSpecificOutput.additionalContext, 'additionalContext present');
+  assert.strictEqual(out.hookSpecificOutput.hookEventName, 'UserPromptSubmit', 'hookEventName correct');
   assert.ok(out.systemMessage, 'systemMessage present');
-  assert.ok(out.additionalContext.includes('85%'), 'pct in additionalContext');
+  assert.ok(out.hookSpecificOutput.additionalContext.includes('85%'), 'pct in additionalContext');
   assert.ok(out.systemMessage.includes('85%'), 'pct in systemMessage');
 });
 
@@ -107,7 +109,7 @@ ok('TOKEN_WATCH_LOOP_PCT=70 → warns when 75%', () => {
   const { stdout, exitCode } = runHook({ TOKEN_WATCH_LOOP_PCT: '70' });
   assert.strictEqual(exitCode, 0);
   const out = JSON.parse(stdout);
-  assert.ok(out.additionalContext.includes('75%'));
+  assert.ok(out.hookSpecificOutput.additionalContext.includes('75%'));
 });
 
 // ── Imminent reset ────────────────────────────────────────────────────────────
@@ -122,7 +124,7 @@ ok('reset in 10min → imminent message (do NOT start loop)', () => {
   });
   const { stdout } = runHook({});
   const out = JSON.parse(stdout);
-  assert.ok(out.additionalContext.toLowerCase().includes('imminent'), 'imminent msg');
+  assert.ok(out.hookSpecificOutput.additionalContext.toLowerCase().includes('imminent'), 'imminent msg');
   assert.ok(out.systemMessage.includes('⛔'), 'red flag icon');
 });
 

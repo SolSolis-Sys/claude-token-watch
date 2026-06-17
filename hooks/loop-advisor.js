@@ -100,7 +100,10 @@ function main() {
     : `⏱ token-watch: 5h at ${pctDisplay}%${timeStr}`;
 
   process.stdout.write(JSON.stringify({
-    additionalContext: advisory,
+    hookSpecificOutput: {
+      hookEventName: 'UserPromptSubmit',
+      additionalContext: advisory,
+    },
     systemMessage: banner,
   }));
   process.exit(0);

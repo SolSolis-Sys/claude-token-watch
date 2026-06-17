@@ -40,6 +40,7 @@ Claude Code is powerful, but it's easy to lose track of two things:
 |---|---|
 | 📊 **Statusline gauge** | Live model, context-window fill bar (green → yellow → red), and session cost. |
 | 🧹 **Auto-compact nudge** | When context crosses a threshold (default 80%), a one-line message suggests `/compact`. Never blocks. |
+| 🔁 **Loop advisor** | Before each prompt, warns when the 5h quota is high (default 80%) — tells autonomous loops how long until reset so they can defer long tasks gracefully. |
 | 🧾 **`/token-report`** | Cost & token usage for today, the last 7 days, and all time — plus per-session, per-model, and subscription-window breakdowns. |
 | ⏱️ **Subscription gauges** | Inline 5h-session and 7-day-weekly gauges in the statusline. Plan (Pro/Max) is **auto-detected** from `claude auth status`; caps are tunable. |
 | 🗃️ **Durable history** | A tiny one-line-per-session log survives transcript pruning. |
@@ -147,6 +148,8 @@ npx claude-token-watch
 | Env var | Default | Meaning |
 |---|---|---|
 | `TOKEN_WATCH_COMPACT_PCT` | `80` | Context fill % that triggers the `/compact` nudge. |
+| `TOKEN_WATCH_LOOP_PCT` | `80` | 5h quota % that triggers the loop advisor warning. |
+| `TOKEN_WATCH_LOOP_ADVISOR` | _(unset)_ | Set to `0` to disable the loop advisor hook entirely. |
 | `TOKEN_WATCH_CONTEXT_WINDOW` | _(model-derived)_ | Override context window size (tokens) for the statusline gauge. |
 | `TOKEN_WATCH_PLAN` | _(auto-detected)_ | `pro` \| `max5` \| `max20`. Selects the cap presets for the 5h/7d gauges. Overrides auto-detection. |
 | `TOKEN_WATCH_SESSION_CAP` | _(from plan)_ | Token cap for the 5-hour rolling window. Overrides the plan preset. |

@@ -23,12 +23,33 @@
  */
 
 const fs   = require('fs');
+const os   = require('os');
+const path = require('path');
 const { CACHE_FILE } = require('../lib/usage-api');
 const { readTranscript, aggregate } = require('../lib/transcript');
 const { usd } = require('../lib/format');
 
 /** Default imminent threshold in minutes. Overridable for testing and power-users. */
 const DEFAULT_IMMINENT_MINS = 15;
+
+/** Minimum gap between two consecutive advisories (cross-hook cooldown). */
+const ADVISORY_COOLDOWN_MS = 60 * 1000; // 60 seconds
+const ADVISORY_CACHE_FILE = path.join(os.homedir(), '.claude', 'token-watch', 'loop-advisor-last.json');
+
+function readLastAdvisory() {
+  try {
+    const raw = fs.readFileSync(ADVISORY_CACHE_FILE, 'utf8');
+    const p = JSON.parse(raw);
+    return typeof p.ts === 'number' ? p.ts : 0;
+  } catch { return 0; }
+}
+
+function writeLastAdvisory() {
+  try {
+    fs.mkdirSync(path.dirname(ADVISORY_CACHE_FILE), { recursive: true });
+    fs.writeFileSync(ADVISORY_CACHE_FILE, JSON.stringify({ ts: Date.now() }));
+  } catch { /* best-effort */ }
+}
 
 function readStdin() {
   try { return fs.readFileSync(0, 'utf8'); } catch { return ''; }
@@ -116,6 +137,13 @@ function main() {
 
   const imminent = minsLeft !== null && minsLeft <= imminentMins;
 
+  // Cooldown — prevents double-firing when both UserPromptSubmit and Stop
+  // trigger loop-advisor within the same interaction (interactive mode).
+  const lastAdvisory = readLastAdvisory();
+  if (Date.now() - lastAdvisory < ADVISORY_COOLDOWN_MS) {
+    process.exit(0);
+  }
+
   // Build the time string
   let timeStr = '';
   if (minsLeft !== null && minsLeft > 0) {
@@ -135,9 +163,16 @@ function main() {
     ? `⛔ token-watch: 5h at ${pctDisplay}%${timeStr}${costStr} — do not start loops`
     : `⏱ token-watch: 5h at ${pctDisplay}%${timeStr}${costStr}`;
 
+  writeLastAdvisory();
+
+  // Determine which hook event triggered this invocation (UserPromptSubmit or Stop).
+  // The Stop hook payload does not include a hookEventName, so we fall back to
+  // 'UserPromptSubmit' to remain compatible with the existing advisory schema.
+  const hookEventName = input.hook_event_name || 'UserPromptSubmit';
+
   process.stdout.write(JSON.stringify({
     hookSpecificOutput: {
-      hookEventName: 'UserPromptSubmit',
+      hookEventName,
       additionalContext: advisory,
     },
     systemMessage: banner,

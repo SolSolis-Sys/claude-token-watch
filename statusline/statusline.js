@@ -27,7 +27,6 @@ const fs = require('fs');
 const path = require('path');
 const { colors, humanNumber, usd, bar, ratioColor } = require('../lib/format');
 const { contextWindow } = require('../lib/pricing');
-const { resolveCaps, rollingUsage } = require('../lib/subscription');
 const { getUsage } = require('../lib/usage-api');
 
 function readStdin() {
@@ -126,17 +125,12 @@ async function main() {
   const cost = sessionCost(input);
   if (cost != null) parts.push(colors.green(usd(cost)));
 
-  // Rolling subscription windows: prefer real API data, fallback to heuristic.
-  const caps = resolveCaps();
-  const usage = rollingUsage();
-
-  // Try to fetch real utilization % from the Anthropic usage API.
-  // If unavailable (no token, network error, timeout), fall back silently to
-  // the heuristic caps from subscription.js.
+  // Subscription windows — real API data only. No heuristic fallback.
+  // If the API is unavailable, gauges are simply omitted; no estimated data shown.
   const apiUsage = await getUsage().catch(() => null);
 
   if (apiUsage && apiUsage.session5hPct !== null) {
-    // Real data: render gauge directly from API percentage, ignore heuristic cap.
+    // Real data: render gauge directly from API percentage.
     const pct = apiUsage.session5hPct;
     const col = ratioColor(pct);
     parts.push(
@@ -144,13 +138,8 @@ async function main() {
       '▕' + col(bar(pct, 5)) + '▏ ' +
       col(Math.round(pct * 100) + '%')
     );
-  } else {
-    // No real API data (or it expired without a fallback): fall back to the
-    // heuristic estimate. Prefix with '~' so the heuristic is visually
-    // distinguishable from the real (even if stale) API-backed gauge above.
-    const sessionGauge = windowGauge('~5h', usage.session5h, caps.session5h);
-    if (sessionGauge) parts.push(sessionGauge);
   }
+  // No real 5h API data — gauge omitted. No heuristic estimate displayed.
 
   if (apiUsage && apiUsage.weekly7dPct !== null) {
     // Real data: render gauge directly from API percentage.
@@ -161,11 +150,8 @@ async function main() {
       '▕' + col(bar(pct, 5)) + '▏ ' +
       col(Math.round(pct * 100) + '%')
     );
-  } else {
-    // Heuristic fallback (no real API data) — same '~' convention as above.
-    const weeklyGauge = windowGauge('~7d', usage.weekly, caps.weekly);
-    if (weeklyGauge) parts.push(weeklyGauge);
   }
+  // No real 7d API data — gauge omitted. No heuristic estimate displayed.
 
   process.stdout.write(parts.join(colors.gray('  ·  ')));
 }

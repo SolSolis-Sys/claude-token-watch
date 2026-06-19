@@ -216,15 +216,16 @@ async function main() {
     }
     console.log('  ' + dim('Source: api.anthropic.com/api/oauth/usage (live)'));
   } else {
-    // Fallback to heuristic rolling totals
-    const sessionWindow = rollingWindow(sessions, Date.now() - 5 * 3600_000);
-    const weeklyWindow  = rollingWindow(sessions, Date.now() - 7 * 86400_000);
-    console.log('  ' + dim('5h   rolling: ') + windowLine(sessionWindow, 'TOKEN_WATCH_SESSION_CAP'));
-    console.log('  ' + dim('7d   rolling: ') + windowLine(weeklyWindow,  'TOKEN_WATCH_WEEKLY_CAP'));
+    // API unavailable — no heuristic fallback. Show a clear error only.
     console.log(
-      '  ' + dim('Set TOKEN_WATCH_SESSION_CAP / TOKEN_WATCH_WEEKLY_CAP to see % of plan used.')
+      '  ' + dim('⚠  API live unavailable (network/TLS/auth error). No subscription data shown.')
     );
-    console.log('  ' + dim('(API usage unavailable — using local heuristic)'));
+    console.log(
+      '  ' + dim('   Run with TOKEN_WATCH_TLS_STRICT=0 to allow unverified TLS (corporate proxy),')
+    );
+    console.log(
+      '  ' + dim('   or check your credentials (~/.claude/.credentials.json) and network.')
+    );
   }
 
   console.log('');

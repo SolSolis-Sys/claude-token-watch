@@ -6,8 +6,8 @@
  * Root cause under test: the statusline is spawned as a brand-new Node
  * process on every render, so the in-memory L1 cache (`_cache`) never
  * survives between renders. This forces a fresh HTTP GET on every render,
- * which the API rate-limits (429), producing a misleading heuristic
- * fallback instead of real (even if slightly stale) data.
+ * which the API rate-limits (429). Without a disk cache, the caller receives
+ * null — no heuristic fallback is used.
  *
  * Fix under test:
  *   A) Persistent disk cache at ~/.claude/token-watch/usage-cache.json
@@ -89,7 +89,7 @@ function writeDiskCache(obj) {
  * { statusCode, body } or throws/emits an error via `mode`.
  *
  * `fn` may be async and may trigger multiple sequential HTTP attempts
- * (e.g. the strict-TLS-then-fallback flow in fetchUsage()). The stub MUST
+ * (e.g. the strict-TLS-then-insecure-fallback flow in fetchUsage()). The stub MUST
  * stay installed for the entire async flow, not just for the synchronous
  * portion of `fn`. Callers should use `withStubbedHttpsAsync` (below) to
  * correctly await `fn` before restoring `https.request`.
@@ -226,7 +226,7 @@ const cacheBackup = backupCacheFile();
       await withStubbedHttpsAsync(() => ({ statusCode: 429, body: '{}' }), async () => {
         const api = freshUsageApiModule();
         const result = await api.getUsage();
-        ok('429 + no disk cache returns null (caller falls back to heuristic)', () => {
+        ok('429 + no disk cache returns null (no data shown — no heuristic fallback)', () => {
           assert.strictEqual(result, null);
         });
       });

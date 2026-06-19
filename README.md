@@ -1,21 +1,21 @@
 <div align="center">
 
-# 🪙 token-watch
+# token-watch
 
-**Live token, context-window & cost monitoring for [Claude Code](https://claude.com/claude-code).**
+**Live token, context-window, and cost monitoring for [Claude Code](https://claude.com/claude-code).**
 
-A statusline gauge, gentle auto-compact nudges, and a usage report — in one tiny plugin.
+A statusline gauge, auto-compact nudges, and a usage report — zero dependencies, ~400 lines of plain Node.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-22c55e.svg)](LICENSE)
-[![Node](https://img.shields.io/badge/node-%E2%89%A518-3b82f6.svg)](package.json)
-[![Dependencies](https://img.shields.io/badge/dependencies-0-e74c3c.svg)](package.json)
-[![Claude Code Plugin](https://img.shields.io/badge/Claude%20Code-plugin-9b59b6.svg)](#install)
+[![License: MIT](https://img.shields.io/badge/License-MIT-2ECC71.svg)](LICENSE)
+[![Node](https://img.shields.io/badge/node-%E2%89%A518-3498DB.svg)](package.json)
+[![Dependencies](https://img.shields.io/badge/dependencies-0-E74C3C.svg)](package.json)
+[![Claude Code Plugin](https://img.shields.io/badge/Claude%20Code-plugin-555555.svg)](#install)
 
 </div>
 
-> ⚠️ **Alpha — work in progress. Use at your own risk.** Expect rough edges. Found a bug or have a suggestion? Please [open an issue](https://github.com/SolSolis-Sys/claude-token-watch/issues).
+> **Alpha — work in progress. Use at your own risk.** Expect rough edges. Found a bug or have a suggestion? Please [open an issue](https://github.com/SolSolis-Sys/claude-token-watch/issues).
 
-> 🔌 **Not affiliated with Anthropic.** This is an independent, unofficial tool that reads local Claude Code data and Anthropic's public OAuth usage endpoint (see [How it works](#how-it-works)) — not a product of or endorsed by Anthropic.
+> **Not affiliated with Anthropic.** This is an independent, unofficial tool that reads local Claude Code data and Anthropic's public OAuth usage endpoint (see [How it works](#how-it-works)) — not a product of or endorsed by Anthropic.
 
 ---
 
@@ -23,7 +23,9 @@ A statusline gauge, gentle auto-compact nudges, and a usage report — in one ti
 ◈ Sonnet 4.6  ▕███████░░░▏ 72% ctx · 144k/200k  ·  $0.42
 ```
 
-> Your statusline, now telling you how full your context is and what the session is costing — at a glance, on every turn.
+*Your statusline, now telling you how full your context is and what the session is costing — at a glance, on every turn.*
+
+---
 
 ## Why
 
@@ -32,46 +34,49 @@ Claude Code is powerful, but it's easy to lose track of two things:
 1. **How much of your context window is left** before quality degrades or an auto-compact surprises you.
 2. **What a session actually costs.**
 
-`token-watch` surfaces both, mostly from data Claude Code already produces locally. The one exception is the subscription gauges, which read your real `/usage` percentage from Anthropic's OAuth endpoint — nothing is ever logged or sent elsewhere. Zero dependencies, ~400 lines of plain Node.
+`token-watch` surfaces both, mostly from data Claude Code already produces locally. The one exception is the subscription gauges, which read your real `/usage` percentage from Anthropic's OAuth endpoint — nothing is ever logged or sent elsewhere.
 
 ## Features
 
-| | |
+| Feature | Description |
 |---|---|
-| 📊 **Statusline gauge** | Live model, context-window fill bar (green → yellow → red), and session cost. |
-| 🧹 **Auto-compact nudge** | When context crosses a threshold (default 80%), a one-line message suggests `/compact`. Never blocks. |
-| 🔁 **Loop advisor** | Before each prompt, warns when the 5h quota is high (default 80%) — tells autonomous loops how long until reset so they can defer long tasks gracefully. |
-| 🧾 **`/token-report`** | Cost & token usage for today, the last 7 days, and all time — plus per-session, per-model, and subscription-window breakdowns. |
-| ⏱️ **Subscription gauges** | Inline 5h-session and 7-day-weekly gauges in the statusline. Plan (Pro/Max) is **auto-detected** from `claude auth status`; caps are tunable. |
-| 🗃️ **Durable history** | A tiny one-line-per-session log survives transcript pruning. |
-| 🔒 **Local-first, no telemetry** | Reads `~/.claude/projects/**` transcripts and the statusline payload. The only outbound call is the read-only OAuth `/usage` lookup for the subscription gauges (same data as Claude Code's own `/usage`) — never logged, never sent anywhere else. |
+| **Statusline gauge** | Live model, context-window fill bar (green → yellow → red), and session cost. |
+| **Auto-compact nudge** | When context crosses a threshold (default 80%), a one-line message suggests `/compact`. Never blocks. |
+| **Loop advisor** | Before each prompt, warns when the 5h quota is high (default 80%) — tells autonomous loops how long until reset so they can defer long tasks gracefully. |
+| **`/token-report`** | Cost and token usage for today, the last 7 days, and all time — plus per-session, per-model, and subscription-window breakdowns. |
+| **Subscription gauges** | Inline 5h-session and 7-day-weekly gauges in the statusline. Plan (Pro/Max) is auto-detected from `claude auth status`; caps are tunable. |
+| **Durable history** | A tiny one-line-per-session log survives transcript pruning. |
+| **Local-first, no telemetry** | Reads `~/.claude/projects/**` transcripts and the statusline payload. The only outbound call is the read-only OAuth `/usage` lookup for the subscription gauges — never logged, never sent anywhere else. |
 
 ## How it works
 
 Claude Code writes a JSONL transcript per session under `~/.claude/projects/<project>/<session>.jsonl`.
-Each assistant turn records the **real** token usage:
+Each assistant turn records the real token usage:
 
 ```json
-{ "type": "assistant", "message": { "model": "claude-sonnet-4-6",
-  "usage": { "input_tokens": 3, "output_tokens": 180,
-             "cache_read_input_tokens": 0,
-             "cache_creation": { "ephemeral_1h_input_tokens": 37268 } } } }
+{
+  "type": "assistant",
+  "message": {
+    "model": "claude-sonnet-4-6",
+    "usage": {
+      "input_tokens": 3,
+      "output_tokens": 180,
+      "cache_read_input_tokens": 0,
+      "cache_creation": { "ephemeral_1h_input_tokens": 37268 }
+    }
+  }
+}
 ```
 
 - The **statusline** computes resident context as `input + cache_read + cache_creation` from the latest turn — exactly what the model held that call.
 - The **Stop hook** checks that ratio and nudges you toward `/compact` when it's high.
 - The **SessionEnd hook** appends an aggregated record to `~/.claude/token-watch/usage.jsonl`.
-- The **5h/7d subscription gauges** read the **real `%`** from Anthropic's OAuth
-  usage endpoint (`GET https://api.anthropic.com/api/oauth/usage`) — the same
-  source that backs the `/usage` command in Claude Code. The result is cached
-  on disk for 60s (`~/.claude/token-watch/usage-cache.json`) since the
-  statusline is a brand-new process on every render. The OAuth token is read
-  from `~/.claude/.credentials.json` and is **never logged or written anywhere**.
+- The **5h/7d subscription gauges** read the real `%` from Anthropic's OAuth usage endpoint (`GET https://api.anthropic.com/api/oauth/usage`) — the same source that backs the `/usage` command in Claude Code. The result is cached on disk for 60s (`~/.claude/token-watch/usage-cache.json`) since the statusline is a brand-new process on every render. The OAuth token is read from `~/.claude/.credentials.json` and is never logged or written anywhere.
 - **`/token-report`** merges that durable log with live transcripts and prices it using the June 2026 rate card.
 
-No token API is required for cost/context tracking — those are the true counts
-Claude Code already records locally. The subscription gauges are the one
-feature that does call a live Anthropic endpoint (read-only, OAuth-authenticated).
+No token API is required for cost/context tracking — those are the true counts Claude Code already records locally. The subscription gauges are the one feature that does call a live Anthropic endpoint (read-only, OAuth-authenticated).
+
+---
 
 ## Install
 
@@ -83,17 +88,13 @@ feature that does call a live Anthropic endpoint (read-only, OAuth-authenticated
 /plugin install token-watch@token-watch
 ```
 
-This wires up the **hooks** and the **`/token-report`** command automatically.
+This wires up the hooks and the `/token-report` command automatically.
 
-> ⚠️ **The statusline gauge is one extra step.** Claude Code plugins cannot
-> contribute a `statusLine` — that is a user-level setting. Add it once
-> (below), then restart Claude Code.
+> **The statusline gauge requires one extra step.** Claude Code plugins cannot contribute a `statusLine` — that is a user-level setting. Add it once (below), then restart Claude Code.
 
 ### Step 2 — enable the statusline gauge
 
-The plugin install drops `statusline.js` under your plugins directory. Point
-`statusLine` at it in `~/.claude/settings.json` (create the key at the top
-level, alongside `"model"`):
+The plugin install drops `statusline.js` under your plugins directory. Point `statusLine` at it in `~/.claude/settings.json` (create the key at the top level, alongside `"model"`):
 
 **macOS / Linux**
 ```json
@@ -117,14 +118,13 @@ level, alongside `"model"`):
 
 Then **restart Claude Code** — the gauge appears on the next turn.
 
-> 💡 **Or just ask Claude to do it.** In Claude Code:
-> *"Add the token-watch statusline to my settings.json and restart."*
-> Claude can locate `plugins/marketplaces/token-watch/statusline/statusline.js`,
-> insert the `statusLine` block, and confirm — no manual JSON editing.
+> **Or just ask Claude to do it.** In Claude Code: *"Add the token-watch statusline to my settings.json and restart."* Claude can locate `plugins/marketplaces/token-watch/statusline/statusline.js`, insert the `statusLine` block, and confirm — no manual JSON editing.
 
 #### Installed from a clone instead of the marketplace?
 
 Point the command at your checkout: `node "/absolute/path/to/claude-token-watch/statusline/statusline.js"`.
+
+---
 
 ## Usage
 
@@ -143,9 +143,11 @@ node scripts/report.js
 npx claude-token-watch
 ```
 
+---
+
 ## Configuration
 
-| Env var | Default | Meaning |
+| Variable | Default | Description |
 |---|---|---|
 | `TOKEN_WATCH_COMPACT_PCT` | `80` | Context fill % that triggers the `/compact` nudge. |
 | `TOKEN_WATCH_LOOP_PCT` | `80` | 5h quota % that triggers the loop advisor warning. |
@@ -154,84 +156,47 @@ npx claude-token-watch
 | `TOKEN_WATCH_PLAN` | _(auto-detected)_ | `pro` \| `max5` \| `max20`. Selects the cap presets for the 5h/7d gauges. Overrides auto-detection. |
 | `TOKEN_WATCH_SESSION_CAP` | _(from plan)_ | Token cap for the 5-hour rolling window. Overrides the plan preset. |
 | `TOKEN_WATCH_WEEKLY_CAP` | _(from plan)_ | Token cap for the 7-day rolling window. Overrides the plan preset. |
-| `TOKEN_WATCH_TLS_STRICT` | _(unset)_ | Set to `1` to disable the automatic non-strict TLS fallback used when Node can't verify Anthropic's certificate chain (notably on Windows). Default: fallback active, with a one-time stderr warning. |
+| `TOKEN_WATCH_TLS_STRICT` | _(unset)_ | `1` = enforce strict TLS, never retry without verification (recommended for audited/production environments). `0` = explicitly allow unverified TLS (useful for corporate proxies). Default (unset): if the TLS chain fails, one retry without verification is attempted, with a one-time stderr warning. |
 | `NO_COLOR` | – | Set to disable ANSI colors. |
 
-#### Subscription gauges (5h / 7d)
+### Subscription gauges (5h / 7d)
 
-The statusline shows two rolling-window gauges — `5h ▕███░░▏ 67%` and
-`7d ▕█████▏ 91%` — for the Anthropic session and weekly limits.
+The statusline shows two rolling-window gauges — `5h ▕███░░▏ 67%` and `7d ▕█████▏ 91%` — for the Anthropic session and weekly limits.
 
-- **Real percentage, read live.** token-watch calls Anthropic's OAuth usage
-  endpoint (`GET https://api.anthropic.com/api/oauth/usage`, Bearer token from
-  `~/.claude/.credentials.json`) — the **same source** behind the `/usage`
-  command in Claude Code. The result is the actual `five_hour.utilization` /
-  `seven_day.utilization` percentage, cached on disk for 60s. The OAuth token
-  is never logged or written anywhere.
-- **Heuristic fallback only.** If the API is unreachable (rate-limited,
-  offline, timeout, no credentials), token-watch first serves the last known
-  *real* value from the disk cache, even if stale. Only when no cached real
-  value exists at all does it fall back to a **heuristic estimate** based on
-  community-derived Pro/Max caps — in that case the gauge is prefixed with
-  `~` (e.g. `~5h 53%`) so you can tell at a glance that it's an approximation,
-  not Anthropic's real number.
-- **Plan auto-detection** (used only for the heuristic fallback). On
-  `SessionEnd`, token-watch runs `claude auth status --json` (reads **only**
-  the `subscriptionType` field — never tokens or email), maps it to a plan,
-  and caches the result in `~/.claude/token-watch/plan-cache.json` (refreshed
-  at most once per 24h). Set `TOKEN_WATCH_PLAN` to override.
-- **The heuristic metric** is `input + output + cacheWrite`, **excluding
-  `cache_read`**: cache reads are the model re-reading its own resident
-  context each turn and dwarf real consumption ~10-50×, which would make the
-  fallback gauge meaningless.
+- **Real percentage, read live.** token-watch calls Anthropic's OAuth usage endpoint (`GET https://api.anthropic.com/api/oauth/usage`, Bearer token from `~/.claude/.credentials.json`) — the same source behind the `/usage` command in Claude Code. The result is the actual `five_hour.utilization` / `seven_day.utilization` percentage, cached on disk for 60s. The OAuth token is never logged or written anywhere.
+- **No heuristic fallback.** If the API is unreachable (rate-limited, offline, timeout, no credentials), token-watch first serves the last known real value from the disk cache, even if stale. If no cached real value exists, the gauges are simply omitted — no estimated data is shown. Estimated numbers would mislead more than showing nothing.
+- **API unavailable error.** When no data can be served (API down, TLS failure, missing credentials), `/token-report` prints a clear error:
+  ```
+  ⚠  API live unavailable (network/TLS/auth error). No subscription data shown.
+  ```
 
-> ### Real `/usage` by default, heuristic `~` only as a fallback
->
-> The gauges read Anthropic's real usage endpoint whenever it's reachable —
-> not an estimate. The heuristic path (prefixed `~`) only kicks in when the
-> API can't be reached and no recent real reading is cached. Even then it's
-> an honest approximation, not a guess pulled from nowhere:
->
-> 1. **Anthropic does not publish per-window limits in tokens.** The Pro/Max 5h
->    and weekly caps used by the fallback are not documented as numbers, so the
->    denominators are community heuristics, not official ceilings.
-> 2. **The fallback metric is a proxy.** It counts `input + output + cacheWrite`
->    and excludes `cache_read` (context re-reads) — a reasonable approximation
->    of real consumption, not Anthropic's exact accounting.
->
-> Treat the `~`-prefixed gauge as a "roughly how heavy is my window" signal
-> for the rare cases the API is unavailable. You can pin your own fallback
-> caps via `TOKEN_WATCH_SESSION_CAP` / `TOKEN_WATCH_WEEKLY_CAP`, and disable
-> the TLS fallback used on some Windows setups via `TOKEN_WATCH_TLS_STRICT=1`.
+### TLS troubleshooting (Windows / corporate proxy)
 
-Heuristic fallback caps, used only when the real endpoint is unavailable:
+On Windows, Node.js may fail to verify Anthropic's TLS chain (`UNABLE_TO_VERIFY_LEAF_SIGNATURE`) because its bundled OpenSSL does not use the OS certificate store. A one-time stderr warning is emitted and the request is retried without TLS verification — the successful result is cached so future fetches skip the doomed strict attempt.
 
-| Plan | `session5h` preset | `weekly` preset | Source |
-|---|---|---|---|
-| `pro` | `3,500,000` | `90,000,000` | calibrated vs real `/usage` (Pro account) |
-| `max5` | `17,500,000` | `450,000,000` | extrapolated 5× from Pro |
-| `max20` | `70,000,000` | `1,800,000,000` | extrapolated 20× from Pro |
+| Value | Behavior |
+|---|---|
+| `TOKEN_WATCH_TLS_STRICT=1` | Enforce strict TLS, never retry without verification. Recommended for audited/production environments. |
+| `TOKEN_WATCH_TLS_STRICT=0` | Explicitly allow unverified TLS. Useful for corporate proxies. |
+| _(unset)_ | Try strict first, fall back to unverified on TLS chain error, emit a one-time warning. |
 
-> The `pro` row was empirically calibrated against the official `/usage` panel
-> (two simultaneous readings on a Pro account). The Max rows scale the calibrated
-> Pro baseline at the documented tier ratios and are **not yet verified** — if you
-> run Max, pin your own caps via the env vars and a PR with your readings is welcome.
+If the API is still unavailable after TLS handling, no data is shown — there is no heuristic estimate.
 
-Pricing lives in [`lib/pricing.js`](lib/pricing.js) and is matched by model-family
-substring, so new point releases inherit the right rates automatically. Plan caps
-live in [`lib/subscription.js`](lib/subscription.js).
+Pricing lives in [`lib/pricing.js`](lib/pricing.js) and is matched by model-family substring, so new point releases inherit the right rates automatically. Plan caps live in [`lib/subscription.js`](lib/subscription.js).
+
+---
 
 ## Project layout
 
 ```
-.claude-plugin/   plugin.json + marketplace.json
-statusline/       statusline.js        — the live gauge
-hooks/            context-guard.js     — Stop: /compact nudge
-                  session-logger.js    — SessionEnd: durable usage log
-commands/         token-report.md      — /token-report slash command
-scripts/          report.js            — the report engine (also npx-able)
-lib/              pricing.js, transcript.js, format.js
-test/             smoke.js + probes
+.claude-plugin/    plugin.json + marketplace.json
+statusline/        statusline.js        — live context/cost gauge
+hooks/             context-guard.js     — Stop: /compact nudge
+                   session-logger.js    — SessionEnd: durable usage log
+commands/          token-report.md      — /token-report slash command
+scripts/           report.js            — report engine (also npx-able)
+lib/               pricing.js, transcript.js, format.js
+test/              smoke.js + probes
 ```
 
 ## Development
@@ -247,6 +212,8 @@ node test/guard-probe.js        # fire the compact nudge
 - Costs are **client-side estimates** from public rates — treat them as a guide, not a bill.
 - Live context is read from the latest assistant turn; right after `/compact` it updates on the next turn.
 - Non-Claude models seen in transcripts (e.g. via other harnesses) fall back to Sonnet-class pricing.
+
+---
 
 ## License
 

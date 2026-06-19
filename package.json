@@ -1,6 +1,6 @@
 {
   "name": "claude-token-watch",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Live token, context-window and cost monitoring for Claude Code — statusline gauge, auto-compact suggestions, and usage reports. Zero dependencies.",
   "type": "commonjs",
   "bin": {

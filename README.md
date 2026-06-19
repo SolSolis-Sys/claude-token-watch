@@ -215,6 +215,15 @@ node test/guard-probe.js        # fire the compact nudge
 
 ---
 
+## Ecosystem
+
+Token Watch integrates with other tools in the SolSolis stack:
+
+- **[claude-conductor](https://github.com/SolSolis-Sys/claude-conductor)** — Orchestration plugin that reads token-watch metrics to automatically suggest `/compact` when context exceeds 90%. Install both for a full autonomous monitoring setup.
+- **[conductor-blueprints](https://github.com/SolSolis-Sys/conductor-blueprints)** — Community blueprint library. Blueprints include cost profiles powered by token-watch data.
+
+---
+
 ## License
 
 [MIT](LICENSE) © 2026 SolSolis-Sys

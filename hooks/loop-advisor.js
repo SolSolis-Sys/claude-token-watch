@@ -7,7 +7,9 @@
  * Reads the disk cache written by usage-api.js (no API call, no 429 risk).
  * When 5h utilization exceeds TOKEN_WATCH_LOOP_PCT (default 80%), injects:
  *   - additionalContext: machine-readable advisory the agent can act on
- *     (defer long tasks, wrap up cleanly before reset)
+ *     (defer long tasks, wrap up cleanly before reset). Includes session cost
+ *     when a transcript is available, so the advisory reflects actual billing
+ *     spend alongside the quota gauge (issue #3).
  *   - systemMessage: visible banner for the user
  *
  * No-op when:
@@ -15,15 +17,22 @@
  *   - 5h utilization is below threshold
  *   - TOKEN_WATCH_LOOP_ADVISOR=0 (opt-out)
  *
- * TOKEN_WATCH_LOOP_PCT   — threshold % (0-100, default 80)
- * TOKEN_WATCH_LOOP_ADVISOR=0 — disable this hook entirely
+ * TOKEN_WATCH_LOOP_PCT           — threshold % (0-100, default 80)
+ * TOKEN_WATCH_LOOP_IMMINENT_MINS — minutes remaining considered "imminent" (default 15)
+ * TOKEN_WATCH_LOOP_ADVISOR=0     — disable this hook entirely
  */
 
 const fs   = require('fs');
-const os   = require('os');
-const path = require('path');
+const { CACHE_FILE } = require('../lib/usage-api');
+const { readTranscript, aggregate } = require('../lib/transcript');
+const { usd } = require('../lib/format');
 
-const CACHE_FILE = path.join(os.homedir(), '.claude', 'token-watch', 'usage-cache.json');
+/** Default imminent threshold in minutes. Overridable for testing and power-users. */
+const DEFAULT_IMMINENT_MINS = 15;
+
+function readStdin() {
+  try { return fs.readFileSync(0, 'utf8'); } catch { return ''; }
+}
 
 function readDiskCache() {
   try {
@@ -60,12 +69,30 @@ function minutesUntil(isoStr) {
   }
 }
 
+/**
+ * Compute the cumulative session cost from the transcript file.
+ * Returns a USD string (e.g. "$1.23") or null if unavailable.
+ */
+function sessionCostLabel(transcriptPath) {
+  if (!transcriptPath) return null;
+  try {
+    const records = readTranscript(transcriptPath);
+    if (!records || records.length === 0) return null;
+    const totals = aggregate(records);
+    if (totals.cost <= 0) return null;
+    return usd(totals.cost);
+  } catch {
+    return null;
+  }
+}
+
 function main() {
   if (process.env.TOKEN_WATCH_LOOP_ADVISOR === '0') {
     process.exit(0);
   }
 
   const threshold = Math.max(1, Math.min(99, Number(process.env.TOKEN_WATCH_LOOP_PCT) || 80)) / 100;
+  const imminentMins = Math.max(1, Number(process.env.TOKEN_WATCH_LOOP_IMMINENT_MINS) || DEFAULT_IMMINENT_MINS);
 
   const disk = readDiskCache();
   if (!disk || !disk.data) {
@@ -77,11 +104,17 @@ function main() {
     process.exit(0);
   }
 
+  // Read transcript path from stdin (hook payload).
+  let input = {};
+  try { input = JSON.parse(readStdin() || '{}'); } catch { input = {}; }
+  const transcriptPath = input.transcript_path || null;
+
   const pctDisplay = Math.round(session5hPct * 100);
   const minsLeft   = minutesUntil(resetsSession);
   const resetAt    = localTime(resetsSession);
+  const costLabel  = sessionCostLabel(transcriptPath);
 
-  const imminent = minsLeft !== null && minsLeft <= 15;
+  const imminent = minsLeft !== null && minsLeft <= imminentMins;
 
   // Build the time string
   let timeStr = '';
@@ -91,13 +124,16 @@ function main() {
     timeStr = ` — reset at ${resetAt}`;
   }
 
+  // Build optional cost string
+  const costStr = costLabel ? ` · session cost ${costLabel}` : '';
+
   const advisory = imminent
-    ? `[token-watch] 5h quota at ${pctDisplay}%${timeStr}. Reset imminent — do NOT start a new autonomous loop. Wrap up current work cleanly.`
-    : `[token-watch] 5h quota at ${pctDisplay}%${timeStr}. Long autonomous loops risk interruption before reset. If planning a multi-step task (>5min), consider completing current work and resuming after the reset.`;
+    ? `[token-watch] 5h quota at ${pctDisplay}%${timeStr}${costStr}. Reset imminent — do NOT start a new autonomous loop. Wrap up current work cleanly.`
+    : `[token-watch] 5h quota at ${pctDisplay}%${timeStr}${costStr}. Long autonomous loops risk interruption before reset. If planning a multi-step task (>5min), consider completing current work and resuming after the reset.`;
 
   const banner = imminent
-    ? `⛔ token-watch: 5h at ${pctDisplay}%${timeStr} — do not start loops`
-    : `⏱ token-watch: 5h at ${pctDisplay}%${timeStr}`;
+    ? `⛔ token-watch: 5h at ${pctDisplay}%${timeStr}${costStr} — do not start loops`
+    : `⏱ token-watch: 5h at ${pctDisplay}%${timeStr}${costStr}`;
 
   process.stdout.write(JSON.stringify({
     hookSpecificOutput: {

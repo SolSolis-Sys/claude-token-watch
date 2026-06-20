@@ -2,6 +2,7 @@
 
 > Live token, context-window and cost monitoring for Claude Code — statusline gauge, quota alerts, and usage reports. Zero dependencies.
 
+[![CI](https://github.com/SolSolis-Sys/claude-token-watch/actions/workflows/ci.yml/badge.svg)](https://github.com/SolSolis-Sys/claude-token-watch/actions/workflows/ci.yml)
 ![Version](https://img.shields.io/badge/version-0.3.4-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen)

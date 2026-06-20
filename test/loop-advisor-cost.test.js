@@ -26,9 +26,15 @@ function ok(name, fn) {
   console.log('  ✓ ' + name);
 }
 
-const CACHE_DIR  = path.join(os.homedir(), '.claude', 'token-watch');
-const CACHE_FILE = path.join(CACHE_DIR, 'usage-cache.json');
-const HOOK       = path.resolve(__dirname, '../hooks/loop-advisor.js');
+const CACHE_DIR      = path.join(os.homedir(), '.claude', 'token-watch');
+const CACHE_FILE     = path.join(CACHE_DIR, 'usage-cache.json');
+const ADVISORY_FILE  = path.join(CACHE_DIR, 'loop-advisor-last.json');
+const HOOK           = path.resolve(__dirname, '../hooks/loop-advisor.js');
+
+/** Remove the cooldown sentinel so the next runHook() is never rate-limited. */
+function clearAdvisoryCache() {
+  try { fs.unlinkSync(ADVISORY_FILE); } catch { /* absent = ok */ }
+}
 
 /** Write a fake disk cache entry */
 function writeCache(overrides) {
@@ -111,6 +117,7 @@ ok('usage-api exports CACHE_FILE that matches the path loop-advisor uses', () =>
 
 ok('hook respects TOKEN_WATCH_LOOP_IMMINENT_MINS to customise imminent window', () => {
   // With 20-minute imminent window and a reset in 18 minutes → imminent.
+  clearAdvisoryCache();
   writeCache({
     data: {
       session5hPct: 0.90,
@@ -127,7 +134,8 @@ ok('hook respects TOKEN_WATCH_LOOP_IMMINENT_MINS to customise imminent window', 
     'should NOT be imminent at 18min with default 15-min window'
   );
 
-  // Custom (20 min): 18 min IS imminent.
+  // Custom (20 min): 18 min IS imminent — clear cooldown first.
+  clearAdvisoryCache();
   const customRun = runHook({ TOKEN_WATCH_LOOP_IMMINENT_MINS: '20' });
   const customOut = JSON.parse(customRun.stdout);
   assert.ok(
@@ -139,6 +147,7 @@ ok('hook respects TOKEN_WATCH_LOOP_IMMINENT_MINS to customise imminent window', 
 // ── Issue #3 — advisory includes session cost when transcript is available ───
 
 ok('advisory includes session cost ($) when transcript is present', () => {
+  clearAdvisoryCache();
   writeCache(); // 85%, 32 min reset
   const transcriptPath = path.join(TMP_DIR, 'session-cost.jsonl');
   // 1M input + 1M output at Sonnet = $18
@@ -155,6 +164,7 @@ ok('advisory includes session cost ($) when transcript is present', () => {
 });
 
 ok('advisory cost figure is plausible (> $0 when tokens consumed)', () => {
+  clearAdvisoryCache();
   writeCache();
   const transcriptPath = path.join(TMP_DIR, 'session-cost2.jsonl');
   // Small usage: 10k input + 1k output at Haiku ≈ $0.000015
@@ -172,6 +182,7 @@ ok('advisory cost figure is plausible (> $0 when tokens consumed)', () => {
 });
 
 ok('advisory still fires when transcript is absent (cost omitted, no crash)', () => {
+  clearAdvisoryCache();
   writeCache();
   const { stdout, exitCode } = runHook({}, { transcript_path: '/nonexistent/path.jsonl' });
   assert.strictEqual(exitCode, 0);
@@ -180,6 +191,7 @@ ok('advisory still fires when transcript is absent (cost omitted, no crash)', ()
 });
 
 ok('advisory still fires when no stdin at all (transcript_path missing)', () => {
+  clearAdvisoryCache();
   writeCache();
   const { stdout, exitCode } = runHook({});
   assert.strictEqual(exitCode, 0);
@@ -189,6 +201,7 @@ ok('advisory still fires when no stdin at all (transcript_path missing)', () => 
 
 // ── cleanup ──────────────────────────────────────────────────────────────────
 clearCache();
+clearAdvisoryCache();
 try { fs.rmSync(TMP_DIR, { recursive: true, force: true }); } catch {}
 
 console.log(`\n${passed} tests passed`);

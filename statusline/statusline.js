@@ -28,6 +28,8 @@ const path = require('path');
 const { colors, humanNumber, usd, bar, ratioColor } = require('../lib/format');
 const { contextWindow } = require('../lib/pricing');
 const { getUsage } = require('../lib/usage-api');
+const { cacheStatus } = require('../lib/cache-ttl');
+const { loadConfig }  = require('../lib/config');
 
 function readStdin() {
   try {
@@ -124,6 +126,28 @@ async function main() {
 
   const cost = sessionCost(input);
   if (cost != null) parts.push(colors.green(usd(cost)));
+
+  const config = loadConfig();
+
+  // Cache TTL segment
+  if (config.show_cache_ttl) {
+    const cs = cacheStatus(transcriptPath);
+    if (cs && cs.warm) {
+      const mins = Math.floor(cs.secondsLeft / 60);
+      const secs = Math.floor(cs.secondsLeft % 60);
+      const timeStr = mins > 0
+        ? `${mins}:${String(secs).padStart(2, '0')}`
+        : `${secs}s`;
+      const warningRatio = config.cache_warning_seconds / (cs.type === '1h' ? 3600 : 300);
+      const col = cs.pct > 0.5
+        ? colors.green
+        : cs.pct > warningRatio
+          ? colors.yellow
+          : colors.red;
+      const cacheBar = '▕' + col(bar(cs.pct, 6)) + '▏';
+      parts.push(colors.dim('cache ') + cacheBar + ' ' + col(timeStr));
+    }
+  }
 
   // Subscription windows — real API data only. No heuristic fallback.
   // If the API is unavailable, gauges are simply omitted; no estimated data shown.

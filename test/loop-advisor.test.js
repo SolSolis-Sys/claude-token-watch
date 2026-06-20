@@ -23,9 +23,15 @@ function ok(name, fn) {
   console.log('  ✓ ' + name);
 }
 
-const CACHE_DIR  = path.join(os.homedir(), '.claude', 'token-watch');
-const CACHE_FILE = path.join(CACHE_DIR, 'usage-cache.json');
-const HOOK       = path.resolve(__dirname, '../hooks/loop-advisor.js');
+const CACHE_DIR      = path.join(os.homedir(), '.claude', 'token-watch');
+const CACHE_FILE     = path.join(CACHE_DIR, 'usage-cache.json');
+const ADVISORY_FILE  = path.join(CACHE_DIR, 'loop-advisor-last.json');
+const HOOK           = path.resolve(__dirname, '../hooks/loop-advisor.js');
+
+/** Remove the cooldown sentinel so the next runHook() is never rate-limited. */
+function clearAdvisoryCache() {
+  try { fs.unlinkSync(ADVISORY_FILE); } catch { /* absent = ok */ }
+}
 
 /** Write a fake disk cache entry */
 function writeCache(overrides) {
@@ -68,6 +74,7 @@ console.log('loop-advisor hook tests\n');
 // ── No cache — no output ─────────────────────────────────────────────────────
 ok('no disk cache → silent exit (no output)', () => {
   clearCache();
+  clearAdvisoryCache();
   const { stdout, exitCode } = runHook({});
   assert.strictEqual(exitCode, 0);
   assert.strictEqual(stdout.trim(), '');
@@ -83,6 +90,7 @@ ok('session5hPct below default threshold (80%) → silent exit', () => {
 
 // ── Above threshold — advisory emitted ───────────────────────────────────────
 ok('session5hPct at 85% → emits additionalContext + systemMessage', () => {
+  clearAdvisoryCache();
   writeCache(); // default: 85%, reset in 32min
   const { stdout, exitCode } = runHook({});
   assert.strictEqual(exitCode, 0);
@@ -105,6 +113,7 @@ ok('TOKEN_WATCH_LOOP_PCT=90 → silent when 85%', () => {
 });
 
 ok('TOKEN_WATCH_LOOP_PCT=70 → warns when 75%', () => {
+  clearAdvisoryCache();
   writeCache({ data: { session5hPct: 0.75, weekly7dPct: 0.30, resetsSession: null, resetsWeekly: null } });
   const { stdout, exitCode } = runHook({ TOKEN_WATCH_LOOP_PCT: '70' });
   assert.strictEqual(exitCode, 0);
@@ -114,6 +123,7 @@ ok('TOKEN_WATCH_LOOP_PCT=70 → warns when 75%', () => {
 
 // ── Imminent reset ────────────────────────────────────────────────────────────
 ok('reset in 10min → imminent message (do NOT start loop)', () => {
+  clearAdvisoryCache();
   writeCache({
     data: {
       session5hPct: 0.92,
@@ -147,5 +157,6 @@ ok('corrupt disk cache → silent exit (no crash)', () => {
 
 // ── cleanup ───────────────────────────────────────────────────────────────────
 clearCache();
+clearAdvisoryCache();
 
 console.log(`\n${passed} tests passed`);

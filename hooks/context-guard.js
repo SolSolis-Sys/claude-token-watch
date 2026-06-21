@@ -12,9 +12,25 @@
  * The hook never blocks; it only informs.
  */
 
-const fs = require('fs');
+const fs   = require('fs');
+const os   = require('os');
+const path = require('path');
 const { contextWindow } = require('../lib/pricing');
 const { humanNumber } = require('../lib/format');
+
+const CONFIG_FILE = path.join(os.homedir(), '.claude', 'token-watch', 'config.json');
+
+/** Read a numeric key from ~/.claude/token-watch/config.json. Returns NaN on failure. */
+function readConfigValue(key) {
+  try {
+    const raw  = fs.readFileSync(CONFIG_FILE, 'utf8');
+    const cfg  = JSON.parse(raw);
+    const val  = cfg && cfg[key];
+    return (typeof val === 'number' && !isNaN(val)) ? val : NaN;
+  } catch {
+    return NaN;
+  }
+}
 
 function readStdin() {
   try { return fs.readFileSync(0, 'utf8'); } catch { return ''; }
@@ -48,7 +64,10 @@ function main() {
   let input = {};
   try { input = JSON.parse(readStdin() || '{}'); } catch { input = {}; }
 
-  const threshold = Math.max(1, Math.min(99, Number(process.env.TOKEN_WATCH_COMPACT_PCT) || 80)) / 100;
+  // Priority: env var > config file > built-in default (80)
+  const envPct    = Number(process.env.TOKEN_WATCH_COMPACT_PCT);
+  const rawPct    = !isNaN(envPct) ? envPct : (readConfigValue('compact-pct') || 80);
+  const threshold = Math.max(1, Math.min(99, rawPct)) / 100;
   const transcriptPath = input.transcript_path;
   const live = lastContext(transcriptPath);
   if (!live || live.ctx == null) { process.exit(0); }

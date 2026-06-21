@@ -89,6 +89,21 @@ npx claude-token-watch
 
 ## Configuration
 
+### CLI (recommended)
+
+```bash
+token-watch-config set compact-pct 90   # suggest /compact at 90% context fill
+token-watch-config set loop-pct 85      # warn on 5h quota at 85%
+token-watch-config get                  # show current effective settings
+token-watch-config get compact-pct      # show one key
+token-watch-config reset                # restore built-in defaults
+```
+
+Settings are stored in `~/.claude/token-watch/config.json`. Priority order:
+**env variable > config file > built-in default**.
+
+### Environment variables
+
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `TOKEN_WATCH_COMPACT_PCT` | `80` | Context % to trigger /compact nudge |

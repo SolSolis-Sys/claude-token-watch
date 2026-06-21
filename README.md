@@ -3,7 +3,7 @@
 > Live token, context-window and cost monitoring for Claude Code — statusline gauge, quota alerts, and usage reports. Zero dependencies.
 
 [![CI](https://github.com/SolSolis-Sys/claude-token-watch/actions/workflows/ci.yml/badge.svg)](https://github.com/SolSolis-Sys/claude-token-watch/actions/workflows/ci.yml)
-![Version](https://img.shields.io/badge/version-0.3.4-blue)
+![Version](https://img.shields.io/badge/version-0.3.5-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen)
 
@@ -92,11 +92,12 @@ npx claude-token-watch
 ### CLI (recommended)
 
 ```bash
-token-watch-config set compact-pct 90   # suggest /compact at 90% context fill
-token-watch-config set loop-pct 85      # warn on 5h quota at 85%
-token-watch-config get                  # show current effective settings
-token-watch-config get compact-pct      # show one key
-token-watch-config reset                # restore built-in defaults
+token-watch-config set compact-pct 90        # suggest /compact at 90% context fill
+token-watch-config set pre-compact-pct 80    # early warning before the hard threshold (default 85%)
+token-watch-config set loop-pct 85           # warn on 5h quota at 85%
+token-watch-config get                       # show current effective settings
+token-watch-config get compact-pct           # show one key
+token-watch-config reset                     # restore built-in defaults
 ```
 
 Settings are stored in `~/.claude/token-watch/config.json`. Priority order:
@@ -107,6 +108,7 @@ Settings are stored in `~/.claude/token-watch/config.json`. Priority order:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `TOKEN_WATCH_COMPACT_PCT` | `80` | Context % to trigger /compact nudge |
+| `TOKEN_WATCH_PRE_COMPACT_PCT` | `85` | Context % to emit early pre-compact warning (once per session) |
 | `TOKEN_WATCH_LOOP_PCT` | `80` | 5h quota % to trigger loop advisor |
 | `TOKEN_WATCH_LOOP_ADVISOR` | `1` | Set to `0` to disable loop advisor |
 | `TOKEN_WATCH_PLAN` | auto | `pro` / `max5` / `max20` — overrides auto-detection |
@@ -120,7 +122,7 @@ token-watch registers the following Claude Code hooks automatically:
 | Hook | File | Purpose |
 |------|------|---------|
 | `UserPromptSubmit` | `loop-advisor.js` | 5h quota advisory before each prompt |
-| `Stop` | `context-guard.js` | /compact suggestion when context > 80% |
+| `Stop` | `context-guard.js` | Pre-compact warning at 85% (once/session) + hard nudge at 80% |
 | `Stop` | `metrics-writer.js` | Write metrics snapshot for conductor |
 | `Stop` | `loop-advisor.js` | 5h quota advisory in autonomous mode |
 | `SessionEnd` | `session-logger.js` | Log session usage to JSONL |

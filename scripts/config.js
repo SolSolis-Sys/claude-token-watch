@@ -23,6 +23,7 @@ const CONFIG_FILE = path.join(os.homedir(), '.claude', 'token-watch', 'config.js
 const VALID_KEYS = {
   'compact-pct': { envVar: 'TOKEN_WATCH_COMPACT_PCT', default: 80, description: 'Context-window % to trigger /compact nudge' },
   'loop-pct':    { envVar: 'TOKEN_WATCH_LOOP_PCT',    default: 80, description: '5h quota % to trigger loop advisor'         },
+  'pre-compact-pct': { envVar: 'TOKEN_WATCH_PRE_COMPACT_PCT', default: 85, description: 'Context-window % to emit pre-compact warning (fires once per session)' },
 };
 
 // ── helpers ────────────────────────────────────────────────────────────────
@@ -113,10 +114,11 @@ function cmdReset() {
 
 function printHelp() {
   console.log('Usage:');
-  console.log('  token-watch-config set compact-pct <0-99>   # context % to trigger /compact nudge');
-  console.log('  token-watch-config set loop-pct <0-99>      # 5h quota % to trigger loop advisor');
-  console.log('  token-watch-config get [key]                # show current effective config');
-  console.log('  token-watch-config reset                    # restore built-in defaults');
+  console.log('  token-watch-config set compact-pct <0-99>     # context % to trigger /compact nudge');
+  console.log('  token-watch-config set loop-pct <0-99>        # 5h quota % to trigger loop advisor');
+  console.log('  token-watch-config set pre-compact-pct <0-99> # context % to emit pre-compact warning');
+  console.log('  token-watch-config get [key]                  # show current effective config');
+  console.log('  token-watch-config reset                      # restore built-in defaults');
   console.log('');
   console.log('Priority: env variable > config file > built-in default');
   console.log(`Config file: ${CONFIG_FILE}`);

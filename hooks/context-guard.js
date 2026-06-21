@@ -60,6 +60,24 @@ function lastContext(transcriptPath) {
   return null;
 }
 
+const STATE_FILE = path.join(os.homedir(), '.claude', 'token-watch', 'precompact-state.json');
+
+function readPreCompactState(transcriptPath) {
+  try {
+    const s = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+    return s.transcript === transcriptPath && s.fired === true;
+  } catch {
+    return false;
+  }
+}
+
+function writePreCompactState(transcriptPath) {
+  try {
+    fs.mkdirSync(path.dirname(STATE_FILE), { recursive: true });
+    fs.writeFileSync(STATE_FILE, JSON.stringify({ transcript: transcriptPath, fired: true }));
+  } catch {}
+}
+
 function main() {
   let input = {};
   try { input = JSON.parse(readStdin() || '{}'); } catch { input = {}; }
@@ -68,22 +86,39 @@ function main() {
   const envPct    = Number(process.env.TOKEN_WATCH_COMPACT_PCT);
   const rawPct    = !isNaN(envPct) ? envPct : (readConfigValue('compact-pct') || 80);
   const threshold = Math.max(1, Math.min(99, rawPct)) / 100;
+
+  const envPrePct    = Number(process.env.TOKEN_WATCH_PRE_COMPACT_PCT);
+  const rawPrePct    = !isNaN(envPrePct) ? envPrePct : (readConfigValue('pre-compact-pct') || 85);
+  const preThreshold = Math.max(1, Math.min(99, rawPrePct)) / 100;
+
   const transcriptPath = input.transcript_path;
   const live = lastContext(transcriptPath);
   if (!live || live.ctx == null) { process.exit(0); }
 
   const win = contextWindow(live.model);
   const pct = live.ctx / win;
-  if (pct < threshold) { process.exit(0); }
 
-  const msg =
-    `⚠ token-watch: context at ${Math.round(pct * 100)}% ` +
-    `(${humanNumber(live.ctx)}/${humanNumber(win)}). ` +
-    `Consider running /compact to free up the window.`;
+  // Hard compact nudge (existing behavior)
+  if (pct >= threshold) {
+    const msg =
+      `⚠ token-watch: context at ${Math.round(pct * 100)}% ` +
+      `(${humanNumber(live.ctx)}/${humanNumber(win)}). ` +
+      `Consider running /compact to free up the window.`;
+    process.stdout.write(JSON.stringify({ systemMessage: msg }));
+    process.exit(0);
+  }
 
-  // Surface to the user without blocking. systemMessage is the supported,
-  // forward-compatible field; unknown fields are ignored by older CC.
-  process.stdout.write(JSON.stringify({ systemMessage: msg }));
+  // Pre-compact warning (once per session crossing)
+  if (pct >= preThreshold && preThreshold < threshold) {
+    if (!readPreCompactState(transcriptPath)) {
+      writePreCompactState(transcriptPath);
+      const preMsg =
+        `⚠ token-watch: context at ${Math.round(pct * 100)}% ` +
+        `— consider /compact now (hard threshold: ${Math.round(threshold * 100)}%).`;
+      process.stdout.write(JSON.stringify({ systemMessage: preMsg }));
+    }
+  }
+
   process.exit(0);
 }
 

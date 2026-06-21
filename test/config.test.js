@@ -132,6 +132,22 @@ ok('set creates parent directories if absent', () => {
   assert.ok(fs.existsSync(configFile), 'config.json should be created even when dir is absent');
 });
 
+ok('set pre-compact-pct writes to config.json', () => {
+  runConfig(['set', 'pre-compact-pct', '75']);
+  const cfg = readCfg();
+  assert.strictEqual(cfg['pre-compact-pct'], 75, 'pre-compact-pct should be 75');
+});
+
+ok('get shows pre-compact-pct', () => {
+  const out = runConfig(['get']);
+  assert.ok(out.includes('pre-compact-pct'), 'output should mention pre-compact-pct');
+});
+
+ok('validation rejects unknown key still works', () => {
+  const err = runConfigExpectFail(['set', 'bad-key', '50']);
+  assert.ok(err !== null && err.status !== 0, 'should reject unknown key');
+});
+
 // ── summary ───────────────────────────────────────────────────────────────
 
 fs.rmSync(tmpHome, { recursive: true, force: true });

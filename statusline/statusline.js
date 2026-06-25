@@ -39,10 +39,16 @@ function readStdin() {
   }
 }
 
-function modelLabel(input) {
+function modelLabel(input, modelId) {
   const m = input.model || {};
   const name = m.display_name || m.id || input.model_id || 'Claude';
-  return String(name).replace(/^claude-/i, '').replace(/-/g, ' ');
+  const base = String(name).replace(/^claude-/i, '').replace(/-/g, ' ');
+  if (modelId) {
+    const win = contextWindow(modelId);
+    if (win >= 1_000_000) return base + ' · 1M';
+    if (win >= 200_000)   return base + ' · 200k';
+  }
+  return base;
 }
 
 /** Last assistant usage from the transcript -> live context token count. */
@@ -103,7 +109,7 @@ async function main() {
   const transcriptPath = input.transcript_path || (input.transcript && input.transcript.path);
   const live = liveContext(transcriptPath);
   const modelId = (live && live.model) || (input.model && input.model.id) || '';
-  const label = modelLabel(input);
+  const label = modelLabel(input, modelId);
 
   const parts = [];
   parts.push(colors.cyan('◈ ' + colors.bold(label)));

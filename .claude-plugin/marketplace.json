@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "Live token & cost monitoring for Claude Code.",
-    "version": "0.1.0"
+    "version": "0.3.5"
   },
   "plugins": [
     {

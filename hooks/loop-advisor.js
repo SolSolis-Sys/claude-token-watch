@@ -26,20 +26,7 @@ const fs   = require('fs');
 const os   = require('os');
 const path = require('path');
 const { CACHE_FILE } = require('../lib/usage-api');
-
-const CONFIG_FILE = path.join(os.homedir(), '.claude', 'token-watch', 'config.json');
-
-/** Read a numeric key from ~/.claude/token-watch/config.json. Returns NaN on failure. */
-function readConfigValue(key) {
-  try {
-    const raw = fs.readFileSync(CONFIG_FILE, 'utf8');
-    const cfg = JSON.parse(raw);
-    const val = cfg && cfg[key];
-    return (typeof val === 'number' && !isNaN(val)) ? val : NaN;
-  } catch {
-    return NaN;
-  }
-}
+const { loadConfig } = require('../lib/config');
 const { readTranscript, aggregate } = require('../lib/transcript');
 const { usd } = require('../lib/format');
 
@@ -126,9 +113,8 @@ function main() {
     process.exit(0);
   }
 
-  // Priority: env var > config file > built-in default (80)
-  const envLoopPct = Number(process.env.TOKEN_WATCH_LOOP_PCT);
-  const rawLoopPct = !isNaN(envLoopPct) ? envLoopPct : (readConfigValue('loop-pct') || 80);
+  // Priority: env var > config.yaml > built-in default (80) — via loadConfig()
+  const rawLoopPct = loadConfig().loop_pct;
   const threshold  = Math.max(1, Math.min(99, rawLoopPct)) / 100;
   const imminentMins = Math.max(1, Number(process.env.TOKEN_WATCH_LOOP_IMMINENT_MINS) || DEFAULT_IMMINENT_MINS);
 

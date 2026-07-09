@@ -9,7 +9,7 @@
   },
   "scripts": {
     "report": "node scripts/report.js",
-    "test": "node test/smoke.js && node test/hooks-config.test.js"
+    "test": "node test/smoke.js && node test/hooks-config.test.js && node test/cache-ttl.test.js && node test/config.test.js && node test/disk-cache.test.js"
   },
   "keywords": [
     "claude",

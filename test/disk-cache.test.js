@@ -426,10 +426,19 @@ const cacheBackup = backupCacheFile();
 // ── Promise-friendly wrappers around the sync helpers above ─────────────────
 
 function withFakeCredentialsAsync(token, fn) {
-  return new Promise((resolve, reject) => {
-    withFakeCredentials(token, () => {
-      Promise.resolve(fn()).then(resolve, reject);
-    });
+  const credDir = path.join(os.homedir(), ".claude");
+  const credPath = path.join(credDir, ".credentials.json");
+  const hadCredFile = fs.existsSync(credPath);
+  const origCred = hadCredFile ? fs.readFileSync(credPath, "utf8") : null;
+
+  fs.mkdirSync(credDir, { recursive: true });
+  fs.writeFileSync(credPath, JSON.stringify({
+    claudeAiOauth: { accessToken: token, expiresAt: Date.now() + 3600_000 },
+  }));
+
+  return Promise.resolve(fn()).finally(() => {
+    if (hadCredFile) fs.writeFileSync(credPath, origCred);
+    else { try { fs.unlinkSync(credPath); } catch {} }
   });
 }
 

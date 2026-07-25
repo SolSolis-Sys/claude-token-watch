@@ -122,7 +122,7 @@ function writeMetrics(payload) {
 
 // ── Main ─────────────────────────────────────────────────────────────────────
 
-function main() {
+async function main() {
   let input = {};
   try { input = JSON.parse(readStdin() || '{}'); } catch { input = {}; }
 
@@ -144,11 +144,22 @@ function main() {
     contextPct    = contextWin > 0 ? live.ctx / contextWin : null;
   }
 
-  // ── Quota from disk cache (written by usage-api.js) ─────────────────────
+  // ── Quota from live API fetch (refresh the cache synchronously) ────────
+  // Sync lag fix: Call getUsage() to ensure usage-cache.json is fresh
+  // before reading it. This prevents metrics from being one cycle behind.
   let quota5hPct = null;
-  const usageCache = readUsageCache();
-  if (usageCache && usageCache.data && typeof usageCache.data.session5hPct === 'number') {
-    quota5hPct = usageCache.data.session5hPct;
+  const { getUsage } = require('../lib/usage-api');
+  try {
+    const liveUsage = await getUsage();
+    if (liveUsage && typeof liveUsage.session5hPct === 'number') {
+      quota5hPct = liveUsage.session5hPct;
+    }
+  } catch (e) {
+    // Fallback to cached data on any error
+    const usageCache = readUsageCache();
+    if (usageCache && usageCache.data && typeof usageCache.data.session5hPct === 'number') {
+      quota5hPct = usageCache.data.session5hPct;
+    }
   }
 
   // ── Session cost from transcript ─────────────────────────────────────────
@@ -174,4 +185,7 @@ function main() {
   process.exit(0);
 }
 
-main();
+main().catch((err) => {
+  // best-effort — never fail a hook over telemetry
+  process.exit(1);
+});

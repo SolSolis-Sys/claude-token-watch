@@ -76,15 +76,29 @@ ok('Haiku rates are lower than Sonnet rates', () => {
 // ── Context window ───────────────────────────────────────────────────────────
 
 ok('contextWindow() returns per-family values', () => {
+  // Save and clear any override
+  const orig = process.env.TOKEN_WATCH_CONTEXT_WINDOW;
+  delete process.env.TOKEN_WATCH_CONTEXT_WINDOW;
+
   // Sonnet and Opus = 1M context
   assert.strictEqual(contextWindow('claude-sonnet-4-6'), 1_000_000);
   assert.strictEqual(contextWindow('claude-opus-4'), 1_000_000);
   // Haiku = 200k context
   assert.strictEqual(contextWindow('claude-haiku-4-5'), 200_000);
+
+  // Restore override
+  if (orig !== undefined) process.env.TOKEN_WATCH_CONTEXT_WINDOW = orig;
 });
 
 ok('contextWindow() returns 1M for context-1m variants', () => {
+  // Save and clear any override
+  const orig = process.env.TOKEN_WATCH_CONTEXT_WINDOW;
+  delete process.env.TOKEN_WATCH_CONTEXT_WINDOW;
+
   assert.strictEqual(contextWindow('claude-sonnet-4-context-1m'), 1_000_000);
+
+  // Restore override
+  if (orig !== undefined) process.env.TOKEN_WATCH_CONTEXT_WINDOW = orig;
 });
 
 ok('contextWindow() respects TOKEN_WATCH_CONTEXT_WINDOW env override', () => {

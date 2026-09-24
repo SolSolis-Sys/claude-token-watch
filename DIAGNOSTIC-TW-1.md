@@ -13,11 +13,18 @@ hors dépôt en **§9**, et les réserves du lot en **§10**.
 Aucune modification n'a été faite dans `~/.claude/` (lecture seule, cf. §7). Seuls
 `DIAGNOSTIC-TW-1.md` et les journaux bruts sous `.agent-teams/TW-1/` ont été écrits.
 
-> **Clôture (t10).** L'arbre corrigé est publié sur la branche `fix/tw-1-hooks-statusline` (commit
-> dont l'oid distant est identique à l'oid local, §10.5), avec une **PR draft** vers `main` :
+> **Clôture (t10, puis t28).** L'arbre corrigé est publié sur la branche `fix/tw-1-hooks-statusline`
+> (commits dont l'oid distant est identique à l'oid local, §10.5), avec une **PR draft** vers `main` :
 > <https://github.com/SolSolis-Sys/claude-token-watch/pull/11>. La PR n'est **pas** fusionnée et le
-> plugin n'est ni installé ni réinstallé. Verdict de la revue adverse tour 3 (t25, bornée aux deux
-> corrections BOM) : **en cours**, sera ajouté en §8.3 / dans la PR.
+> plugin n'est ni installé ni réinstallé.
+>
+> **Verdicts des revues adverses du lot.** Tour 3 (**t25**, bornée aux deux corrections BOM) :
+> `needs_revision` (**failed**) — le finding **F1 (high)** établit que la perte silencieuse de
+> réglages subsistait : le CLI réécrivait un `config.json` qu'il n'avait pas su lire (§4.5). Tour 4
+> (**t27**, bornée à la réparation t26) : **`pass`**. La correction n'est donc arrivée sur la branche
+> qu'**après** ce refus, dans un commit de suivi. Deux qualifications documentaires du CLI demandées
+> par la revue `pass` (findings F1/F2/F3 : `get` refuse un fichier illisible, `reset` le supprime
+> sans le lire) portent sur `README.md` et le CHANGELOG, hors périmètre de ce commit.
 
 > **Correction de sincérité (t11, 3 points).** (1) Les preuves P1/P2/P3 étaient présentées comme
 > la démonstration de la cause de la mutité : ce sont des **rejeux manuels** de la chaîne de
@@ -666,6 +673,53 @@ la tâche de réparation/PR (soit une ligne `.agent-teams/`, soit une exclusion 
 par fichier, jamais `git add -A` / `git add .` / `git commit -a`, `.gitignore` **non modifié**.
 `.agent-teams/` et `.conductor/` restent en `??` sur la branche. Détail en §10.2.
 
+### 4.5 Le CLI de configuration écrasait un `config.json` qu'il n'avait pas su lire (fermé par t26)
+
+Dernier défaut trouvé et fermé **pendant** le lot, et non dans l'état figé de §0 : c'est la revue
+adverse du **tour 3 (t25)** qui l'a établi, en refusant la clôture (`needs_revision`, finding
+**F1 high**). Il appartient à la même classe de défaut que le BOM de §8.3 — une perte de réglages
+**silencieuse et annoncée comme un succès** — mais par une autre route : le CLI.
+
+Cause : `readConfig()` (`scripts/config.js:41-53`) renvoyait `{}` pour **tout** échec, sans
+distinguer « `config.json` absent » de « présent mais illisible » ; `cmdSet` (:86-88) reconstruisait
+alors le fichier **entier** à partir de ce vide.
+
+Mesure de la perte (fixtures jetables, `HOME`/`USERPROFILE` détournés, tête `FF FE` produite par la
+vraie route PowerShell 5.1 `Out-File -Encoding unicode`), fichier de 164 octets portant trois
+réglages valides (`compact-pct 60`, `loop-pct 70`, `quota-alert-pct 40`) :
+
+```
+AVANT (HEAD de la branche, avant t26)
+  node scripts/config.js set quota-alert-pct 55   -> exit 0, « set to 55% (stored in …) »
+  fichier : 164 o -> 28 o ; contenu après = {"quota-alert-pct":55}
+  compact-pct et loop-pct DÉTRUITS, sans un mot ; `get` affiche ensuite [source: default]
+  (rejoué par la revue : 140->28 o en tête FF FE, 34->28 o tronqué, 54->28 o commenté,
+   racine tableau [1,2,3] : exit 0, 10->18 o, succès annoncé, réglage disparu à la sérialisation)
+
+APRÈS (t26)
+  node scripts/config.js set quota-alert-pct 55   -> exit 1, stdout VIDE, 3 lignes sur stderr :
+    « …\config.json is present but unreadable — it is not UTF-8 but UTF-16LE (BOM FF FE). »
+    « … refusing to overwrite it; no modification was made. »
+  fichier : 122/140 o, sha256 et mtimeMs STRICTEMENT identiques (aucune écriture)
+  même refus nommant le chemin pour : tronqué (invalid JSON, position), commenté, racine tableau
+  (« invalid — the root is a JSON array, not an object »), racine null, UTF-16BE, UTF-16 sans BOM
+```
+
+Le contrôle positif est dans le même run : un `config.json` **absent** (ou blanc) reste le seul cas
+créable (`exit 0`, fichier créé), et sur un fichier **valide** seule la clé visée change. `get`
+partage le même refus (`exit 1`, stdout vide) au lieu d'afficher des valeurs par défaut ; `reset`
+reste destructif par contrat et **nomme** le chemin supprimé. Les bornes et codes existants sont
+inchangés (100 → 1, -1 → 1, clé inconnue → 1, argument manquant → 1, commande inconnue → 1, `get` →
+0, `reset` → 0). Six contrôles in-process ajoutés (`taille` + `mtimeMs` + octets comparés
+avant/après) ; les mutants de la revue (garde `configOrExit` rendue laxiste, garde `Array.isArray`
+retirée) font tomber ces contrôles.
+
+Encadrement par les revues : **tour 3 (t25) = `needs_revision`** (ce finding F1 high, plus F2 basse
+sur la racine tableau), **tour 4 (t27) = `pass`** — le refus est jugé par exécution, sur 9 formes
+illisibles/invalides et 11 commandes × 6 états de fichier, avec mutants et contrôles positifs dans le
+même run. Verdicts rappelés en tête de document ; les deux incidences documentaires du tour 4
+(`get` qui refuse, `reset` qui supprime) portent sur `README.md`/`CHANGELOG.md`, hors de ce commit.
+
 ---
 
 ## 5. Verdict par hypothèse
@@ -944,9 +998,12 @@ t24 — CLI : `node scripts/config.js set quota-alert-pct 55` sur un config.json
         AVANT (lecture brute rétablie) : exit 0 silencieux, fichier APRÈS = { "quota-alert-pct": 55 } — compact-pct 60 et loop-pct 70 DÉTRUITS
 ```
 
-**Revue adverse tour 3 (t25), bornée à ces deux corrections BOM : EN COURS au moment d'écrire.**
-Son verdict (PASS, ou retouche demandée) sera ajouté à ce paragraphe ; si elle demande une
-retouche, elle fera un **commit de suivi sur la même branche**, sans nouveau commit ici.
+**Revue adverse tour 3 (t25), bornée à ces deux corrections BOM : `needs_revision` (failed).** Les
+deux corrections BOM de t23/t24 passent, mais la revue a établi que la **même classe de perte
+silencieuse subsistait par une autre route** — le CLI de configuration réécrivant un `config.json`
+qu'il n'avait pas su lire (finding F1 high, plus F2 low sur la racine tableau). Ce défaut est
+détaillé et mesuré en **§4.5** ; il a été corrigé par t26 et la revue tour 4 (**t27**) a rendu
+**`pass`**. Aucune des deux corrections BOM ci-dessus n'a été retouchée.
 
 **Preuve manquante, signalée :** `quota_5h_pct = 0.95` vient d'un **cache d'usage posé par le
 harnais** (`usage-cache.json` du HOME jetable), la récupération réseau étant refusée sous ce bac à
@@ -978,6 +1035,31 @@ ok 8 - test\quota-alert.test.js   [32 checks passed.]
 exit=0 (= nombre de fichiers rouges)
 détail par fichier : .agent-teams/TW-1/g4-files-noshim/
 ```
+
+**Rejeu t28, après le commit de suivi (t26 en place)** — mêmes 8 cibles, même méthode, la seule
+différence est `test/config.test.js` qui passe de 28 à **34** contrôles (les 6 contrôles in-process
+ajoutés par t26 pour le refus d'écraser un config illisible) :
+
+```
+ok 1 - test\smoke.js   [32 checks passed.]
+ok 2 - test\cache-ttl.test.js   [7 checks passed.]
+ok 3 - test\config.test.js   [34 passed, 0 failed]
+ok 4 - test\disk-cache.test.js   [16 checks passed.]
+ok 5 - test\hooks-config.test.js   [28 checks passed.]
+ok 6 - test\loop-advisor-cost.test.js   [7 tests passed]
+ok 7 - test\loop-advisor.test.js   [9 tests passed]
+ok 8 - test\quota-alert.test.js   [32 checks passed.]
+1..8 / # tests 8 / # pass 8 / # fail 0 / exit 0
+```
+
+`node test/config.test.js` et `node test/smoke.js` lancés directement sortent aussi en 0
+(`34 passed, 0 failed` / `32 checks passed.`). **La porte officielle `npm test` reste refusée dans ce
+bac à sable** : le runner de Node re-spawn un processus par fichier avec stdio canalisé et intercepte
+`spawn` à son démarrage, donc le shim `NODE_OPTIONS` ne le couvre pas → `# tests 7 / # pass 0 /
+# fail 7 / spawn EPERM` (journal `.agent-teams/TW-1/t28-npm-test.log`, mesuré aussi en t10 :
+`g4-gate.log`). Le rejeu fichier par fichier ci-dessus n'est pas une porte équivalente officielle :
+c'est un substitut local, la mesure hors bac à sable restant celle du capitaine (§8.4, haut de
+section).
 
 et la contre-épreuve de la forme fautive, conservée :
 

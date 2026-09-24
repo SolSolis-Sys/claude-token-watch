@@ -341,6 +341,90 @@ ok('a config.json without a BOM behaves exactly as before the fix', () => {
   assert.deepStrictEqual(readCfg(), { 'compact-pct': 60, 'loop-pct': 45, 'quota-alert-pct': 40 });
 });
 
+// ── a present-but-unreadable config.json is refused, never overwritten ────
+// readConfig() used to return {} for every failure, so `set` rewrote the file
+// with that empty object: a UTF-16LE file written by PowerShell 5.1 (`>` or
+// `Out-File`), a truncated file, commented JSON or an array root each lost
+// every stored setting while still reporting success. The CLI must refuse.
+
+function snapshot() {
+  const st = fs.statSync(configFile);
+  return { size: st.size, mtimeMs: st.mtimeMs, bytes: fs.readFileSync(configFile) };
+}
+
+function writeRaw(content) {
+  fs.mkdirSync(path.dirname(configFile), { recursive: true });
+  fs.rmSync(configFile, { force: true });
+  fs.writeFileSync(configFile, content);
+}
+
+function refusedSet(...expect) {
+  const before = snapshot();
+  const r = runCli(() => cli.cmdSet('quota-alert-pct', '55'));
+  assert.strictEqual(r.ok, false, 'the CLI must refuse, not report success');
+  assert.strictEqual(r.exitCode, 1, 'exit code must be non-zero');
+  assert.ok(r.err.includes(configFile), 'the message must name the file, got: ' + r.err);
+  assert.ok(r.err.includes('no modification was made'), 'the message must say nothing was written: ' + r.err);
+  for (const word of expect) assert.ok(r.err.includes(word), 'the message should say "' + word + '", got: ' + r.err);
+  const after = snapshot();
+  assert.strictEqual(after.size, before.size, 'size must not change');
+  assert.strictEqual(after.mtimeMs, before.mtimeMs, 'mtime must not change');
+  assert.deepStrictEqual(after.bytes, before.bytes, 'content must not change');
+}
+
+ok('a UTF-16LE config.json (PowerShell `>` / Out-File) is refused, not overwritten', () => {
+  writeRaw(Buffer.concat([
+    Buffer.from([0xFF, 0xFE]),
+    Buffer.from('{"compact-pct": 60, "loop-pct": 70, "quota-alert-pct": 40}\r\n', 'utf16le'),
+  ]));
+  refusedSet('unreadable', 'UTF-16LE', 'FF FE');
+});
+
+ok('a truncated config.json is refused, not overwritten', () => {
+  writeRaw('{"compact-pct": 60, "loop-pct"');
+  refusedSet('unreadable', 'invalid JSON');
+});
+
+ok('a commented config.json is refused, not overwritten', () => {
+  writeRaw('{\n  // mes reglages\n  "compact-pct": 60,\n  "loop-pct": 70,\n  "quota-alert-pct": 40\n}\n');
+  refusedSet('unreadable');
+});
+
+ok('a JSON array root is invalid content, not an empty config', () => {
+  writeRaw('[1, 2, 3]');
+  refusedSet('invalid', 'array');
+  assert.strictEqual(cli.readConfigFile().state, 'invalid', 'an array root is invalid, not absent');
+  const g = runCli(() => cli.cmdGet('quota-alert-pct'));
+  assert.strictEqual(g.ok, false, 'get must not pretend the defaults apply to a file it cannot read');
+  assert.strictEqual(g.exitCode, 1);
+  assert.strictEqual(fs.readFileSync(configFile, 'utf8'), '[1, 2, 3]', 'the file must still be untouched');
+});
+
+ok('the three states are told apart: absent vs unreadable vs invalid', () => {
+  fs.rmSync(configFile, { force: true });
+  assert.strictEqual(cli.readConfigFile().state, 'absent');
+  const gone = runCli(() => cli.cmdGet(null));
+  assert.ok(gone.ok, 'get must work without a file, got: ' + gone.err);
+  assert.ok(gone.out.includes('state: absent'), 'get must say the file is absent: ' + gone.out);
+
+  writeRaw('not json at all');
+  assert.strictEqual(cli.readConfigFile().state, 'unreadable');
+  writeRaw('[1]');
+  assert.strictEqual(cli.readConfigFile().state, 'invalid');
+  writeRaw('{"quota-alert-pct": 40}');
+  assert.strictEqual(cli.readConfigFile().state, 'ok');
+  assert.strictEqual(cli.readConfigFile().cfg['quota-alert-pct'], 40, 'the ok state carries the settings');
+  assert.ok(runCli(() => cli.cmdGet(null)).out.includes('present and readable'));
+});
+
+ok('an absent config.json is still created by set (the only creatable case)', () => {
+  fs.rmSync(configFile, { force: true });
+  fs.rmSync(configDir, { recursive: true, force: true });
+  const r = runCli(() => cli.cmdSet('quota-alert-pct', '40'));
+  assert.ok(r.ok, 'an absent file must stay creatable, got: ' + r.err);
+  assert.deepStrictEqual(readCfg(), { 'quota-alert-pct': 40 });
+});
+
 // ── end-to-end: what the CLI writes must be what the hooks read ───────────
 // lib/config.js is required here, after HOME was redirected above, so it
 // resolves config.yaml/config.json under the temp HOME.

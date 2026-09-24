@@ -17,7 +17,17 @@ const assert   = require('assert');
 const fs       = require('fs');
 const os       = require('os');
 const path     = require('path');
-const { execSync } = require('child_process');
+const { spawnSync } = require('child_process');
+
+// ── Throwaway HOME ────────────────────────────────────────────────────────────
+// This suite writes ~/.claude/token-watch/usage-cache.json and spawns the hook
+// (which reads ~/.claude/.credentials.json through usage-api). The redirect MUST
+// precede the first os.homedir() call and any require that captures that path at
+// load time — lib/usage-api is required lazily inside the checks, and the child
+// process inherits this HOME through process.env.
+const HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-loop-cost-home-'));
+process.env.HOME = HOME;
+process.env.USERPROFILE = HOME;
 
 let passed = 0;
 function ok(name, fn) {
@@ -82,16 +92,36 @@ function writeTranscript(transcriptPath, usageRecords) {
   fs.writeFileSync(transcriptPath, lines.join('\n') + '\n');
 }
 
-/** Run the hook, optionally passing a transcript path via stdin JSON */
+/**
+ * Run the hook as a real child process. stdin is fed from a temp file and
+ * stdout/stderr are captured through file descriptors instead of pipes: piped
+ * stdio is refused in sandboxed environments (EPERM), and file redirection
+ * still yields the hook's real stdout and exit code to assert on.
+ */
 function runHook(env, stdinPayload) {
   const e = Object.assign({}, process.env, env);
   e.NO_COLOR = '1';
-  const input = JSON.stringify(stdinPayload || {});
+  const inPath = path.join(TMP_DIR, 'hook-stdin.json');
+  const outPath = path.join(TMP_DIR, 'hook-stdout.txt');
+  const errPath = path.join(TMP_DIR, 'hook-stderr.txt');
+  fs.writeFileSync(inPath, JSON.stringify(stdinPayload || {}));
+  const inFd = fs.openSync(inPath, 'r');
+  const outFd = fs.openSync(outPath, 'w');
+  const errFd = fs.openSync(errPath, 'w');
   try {
-    const out = execSync(`node "${HOOK}"`, { input, env: e, encoding: 'utf8' });
-    return { stdout: out, exitCode: 0 };
-  } catch (err) {
-    return { stdout: err.stdout || '', exitCode: err.status || 1 };
+    const res = spawnSync(process.execPath, [HOOK], {
+      stdio: [inFd, outFd, errFd],
+      env: e,
+    });
+    return {
+      stdout: fs.readFileSync(outPath, 'utf8'),
+      stderr: fs.readFileSync(errPath, 'utf8'),
+      exitCode: res.status === null ? 1 : res.status,
+    };
+  } finally {
+    fs.closeSync(inFd);
+    fs.closeSync(outFd);
+    fs.closeSync(errFd);
   }
 }
 
@@ -100,6 +130,16 @@ const TMP_DIR = path.join(os.tmpdir(), 'tw-test-' + process.pid);
 fs.mkdirSync(TMP_DIR, { recursive: true });
 
 console.log('loop-advisor cost + constants tests\n');
+
+ok('HOME is diverted: cache, credentials and state live in a throwaway dir', () => {
+  assert.strictEqual(os.homedir(), HOME);
+  assert.ok(HOME.startsWith(os.tmpdir()), 'HOME must be a temp directory');
+  assert.ok(CACHE_DIR.startsWith(HOME + path.sep), 'cache dir must be under the temp HOME');
+  assert.ok(
+    path.join(os.homedir(), '.claude', '.credentials.json').startsWith(HOME + path.sep),
+    'credentials path must be under the temp HOME'
+  );
+});
 
 // ── Issue #4 — CACHE_FILE is the canonical path from usage-api, not a copy ──
 
@@ -203,5 +243,6 @@ ok('advisory still fires when no stdin at all (transcript_path missing)', () => 
 clearCache();
 clearAdvisoryCache();
 try { fs.rmSync(TMP_DIR, { recursive: true, force: true }); } catch {}
+try { fs.rmSync(HOME, { recursive: true, force: true }); } catch {}
 
 console.log(`\n${passed} tests passed`);

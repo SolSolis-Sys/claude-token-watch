@@ -3,8 +3,20 @@
 /**
  * Manual probe: feeds the statusline its stdin JSON using a real transcript,
  * so we can eyeball the rendered gauge. Not part of the automated suite.
- * Run: node test/statusline-probe.js
+ * Run: TOKEN_WATCH_PROBE_ALLOW_REAL_HOME=1 node test/statusline-probe.js
  */
+
+// This probe works on the REAL ~/.claude: the statusline it spawns reads
+// ~/.claude/.credentials.json and rewrites ~/.claude/token-watch/usage-cache.json.
+// Refuse to run without an explicit opt-in. This guard sits above every require
+// and every call, so nothing can reach the real home when it fires.
+if (process.env.TOKEN_WATCH_PROBE_ALLOW_REAL_HOME !== '1') {
+  process.stderr.write(
+    'test/statusline-probe.js reads/writes the real ~/.claude (usage-cache.json, .credentials.json).\n' +
+    'Refusing to run. Set TOKEN_WATCH_PROBE_ALLOW_REAL_HOME=1 to allow it.\n'
+  );
+  process.exit(1);
+}
 
 const { spawnSync } = require('child_process');
 const path = require('path');

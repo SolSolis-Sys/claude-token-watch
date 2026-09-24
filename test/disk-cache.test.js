@@ -37,6 +37,15 @@ function ok(name, fn) {
   console.log('  ✓ ' + name);
 }
 
+// ── Throwaway HOME ────────────────────────────────────────────────────────────
+// This suite writes cache files AND a fake ~/.claude/.credentials.json. The
+// redirect MUST happen before the first os.homedir() call and before requiring
+// any module that captures that path at load time — lib/usage-api is therefore
+// required lazily (freshUsageApiModule) and re-evaluated against this HOME.
+const HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-disk-cache-home-'));
+process.env.HOME = HOME;
+process.env.USERPROFILE = HOME;
+
 const CACHE_DIR = path.join(os.homedir(), '.claude', 'token-watch');
 const CACHE_FILE = path.join(CACHE_DIR, 'usage-cache.json');
 
@@ -146,6 +155,13 @@ function freshUsageApiModule() {
 }
 
 console.log('token-watch disk-cache test\n');
+
+ok('HOME is diverted: every path below lives in a throwaway directory', () => {
+  assert.strictEqual(os.homedir(), HOME);
+  assert.ok(HOME.startsWith(os.tmpdir()), 'HOME must be a temp directory');
+  assert.ok(CACHE_DIR.startsWith(HOME + path.sep), 'cache dir must be under the temp HOME');
+  assert.ok(CACHE_FILE.startsWith(HOME + path.sep), 'cache file must be under the temp HOME');
+});
 
 const cacheBackup = backupCacheFile();
 
@@ -416,12 +432,19 @@ const cacheBackup = backupCacheFile();
   })();
 
   restoreCacheFile(cacheBackup);
+  cleanupHome();
   console.log('\n' + passed + ' checks passed.');
 })().catch((err) => {
   restoreCacheFile(cacheBackup);
+  cleanupHome();
   console.error('TEST FAILURE:', err);
   process.exit(1);
 });
+
+/** Drop the throwaway HOME (and the fake credentials file it holds). */
+function cleanupHome() {
+  try { fs.rmSync(HOME, { recursive: true, force: true }); } catch { /* best-effort */ }
+}
 
 // ── Promise-friendly wrappers around the sync helpers above ─────────────────
 

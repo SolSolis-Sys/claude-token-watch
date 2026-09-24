@@ -23,7 +23,11 @@ const CONFIG_FILE = path.join(os.homedir(), '.claude', 'token-watch', 'config.js
 /** Read a numeric key from ~/.claude/token-watch/config.json. Returns NaN on failure. */
 function readConfigValue(key) {
   try {
-    const raw  = fs.readFileSync(CONFIG_FILE, 'utf8');
+    // A hand-edited config.json written on Windows (PowerShell 5.1
+    // `Set-Content -Encoding utf8`, or Notepad "UTF-8 with BOM") starts with a
+    // UTF-8 BOM; JSON.parse rejects it, and the threshold used to fall back to
+    // the default in complete silence. Strip it before parsing.
+    const raw  = fs.readFileSync(CONFIG_FILE, 'utf8').replace(/^\uFEFF/, '');
     const cfg  = JSON.parse(raw);
     const val  = cfg && cfg[key];
     return (typeof val === 'number' && !isNaN(val)) ? val : NaN;
@@ -122,4 +126,9 @@ function main() {
   process.exit(0);
 }
 
-main();
+// Post-fix rule: requiring this file must NOT run the hook (the manifest calls
+// the exported entry explicitly from `node -e`, where require.main is
+// undefined). Direct file execution stays supported through the guard.
+if (require.main === module) main();
+
+module.exports = { main };

@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/loop-advisor.js\""
+            "command": "node -e \"require(require('path').join(process.env.CLAUDE_PLUGIN_ROOT,'hooks','loop-advisor.js')).main()\""
           }
         ]
       }
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/metrics-writer.js\""
+            "command": "node -e \"require(require('path').join(process.env.CLAUDE_PLUGIN_ROOT,'hooks','metrics-writer.js')).main().catch(()=>process.exit(0))\""
           }
         ]
       }
@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/context-guard.js\""
+            "command": "node -e \"require(require('path').join(process.env.CLAUDE_PLUGIN_ROOT,'hooks','context-guard.js')).main()\""
           }
         ]
       },
@@ -37,7 +37,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/metrics-writer.js\""
+            "command": "node -e \"require(require('path').join(process.env.CLAUDE_PLUGIN_ROOT,'hooks','metrics-writer.js')).main().catch(()=>process.exit(0))\""
           }
         ]
       },
@@ -46,7 +46,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/loop-advisor.js\""
+            "command": "node -e \"require(require('path').join(process.env.CLAUDE_PLUGIN_ROOT,'hooks','loop-advisor.js')).main()\""
           }
         ]
       }
@@ -57,7 +57,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-logger.js\""
+            "command": "node -e \"require(require('path').join(process.env.CLAUDE_PLUGIN_ROOT,'hooks','session-logger.js')).main()\""
           }
         ]
       }

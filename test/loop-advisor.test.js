@@ -14,7 +14,16 @@ const assert = require('assert');
 const fs     = require('fs');
 const os     = require('os');
 const path   = require('path');
-const { execSync } = require('child_process');
+const { spawnSync } = require('child_process');
+
+// ── Throwaway HOME ────────────────────────────────────────────────────────────
+// This suite writes ~/.claude/token-watch/usage-cache.json and spawns the hook
+// (which reads/writes the same directory). The redirect MUST precede the first
+// os.homedir() call and any require capturing that path; the child process
+// inherits it through process.env.
+const HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-loop-advisor-home-'));
+process.env.HOME = HOME;
+process.env.USERPROFILE = HOME;
 
 let passed = 0;
 function ok(name, fn) {
@@ -56,20 +65,42 @@ function clearCache() {
   try { fs.unlinkSync(CACHE_FILE); } catch { /* absent = ok */ }
 }
 
-/** Run the hook as a child process, return { stdout, exitCode } */
+/**
+ * Run the hook as a real child process. stdin comes from a temp file and stdout
+ * is captured through a file descriptor instead of a pipe: piped stdio is
+ * refused in sandboxed environments (EPERM), and this still asserts on the
+ * hook's real stdout and exit code.
+ */
 function runHook(env) {
   const e = Object.assign({}, process.env, env);
   // suppress color codes
   e.NO_COLOR = '1';
+  const inPath = path.join(TMP_DIR, 'hook-stdin.json');
+  const outPath = path.join(TMP_DIR, 'hook-stdout.txt');
+  fs.writeFileSync(inPath, '{}');
+  const inFd = fs.openSync(inPath, 'r');
+  const outFd = fs.openSync(outPath, 'w');
   try {
-    const out = execSync(`node "${HOOK}"`, { input: '{}', env: e, encoding: 'utf8' });
-    return { stdout: out, exitCode: 0 };
-  } catch (err) {
-    return { stdout: err.stdout || '', exitCode: err.status || 1 };
+    const res = spawnSync(process.execPath, [HOOK], { stdio: [inFd, outFd, 'ignore'], env: e });
+    return { stdout: fs.readFileSync(outPath, 'utf8'), exitCode: res.status === null ? 1 : res.status };
+  } finally {
+    fs.closeSync(inFd);
+    fs.closeSync(outFd);
   }
 }
 
+/** Temp dir for the child's stdin/stdout files in this test run */
+const TMP_DIR = path.join(os.tmpdir(), 'tw-loop-advisor-' + process.pid);
+fs.mkdirSync(TMP_DIR, { recursive: true });
+
 console.log('loop-advisor hook tests\n');
+
+ok('HOME is diverted: cache and cooldown state live in a throwaway dir', () => {
+  assert.strictEqual(os.homedir(), HOME);
+  assert.ok(HOME.startsWith(os.tmpdir()), 'HOME must be a temp directory');
+  assert.ok(CACHE_DIR.startsWith(HOME + path.sep), 'cache dir must be under the temp HOME');
+  assert.ok(ADVISORY_FILE.startsWith(HOME + path.sep), 'state file must be under the temp HOME');
+});
 
 // ── No cache — no output ─────────────────────────────────────────────────────
 ok('no disk cache → silent exit (no output)', () => {
@@ -158,5 +189,7 @@ ok('corrupt disk cache → silent exit (no crash)', () => {
 // ── cleanup ───────────────────────────────────────────────────────────────────
 clearCache();
 clearAdvisoryCache();
+try { fs.rmSync(TMP_DIR, { recursive: true, force: true }); } catch {}
+try { fs.rmSync(HOME, { recursive: true, force: true }); } catch {}
 
 console.log(`\n${passed} tests passed`);

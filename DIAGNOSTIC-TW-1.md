@@ -13,6 +13,12 @@ hors dépôt en **§9**, et les réserves du lot en **§10**.
 Aucune modification n'a été faite dans `~/.claude/` (lecture seule, cf. §7). Seuls
 `DIAGNOSTIC-TW-1.md` et les journaux bruts sous `.agent-teams/TW-1/` ont été écrits.
 
+> **Clôture (t10).** L'arbre corrigé est publié sur la branche `fix/tw-1-hooks-statusline` (commit
+> dont l'oid distant est identique à l'oid local, §10.5), avec une **PR draft** vers `main` :
+> <https://github.com/SolSolis-Sys/claude-token-watch/pull/11>. La PR n'est **pas** fusionnée et le
+> plugin n'est ni installé ni réinstallé. Verdict de la revue adverse tour 3 (t25, bornée aux deux
+> corrections BOM) : **en cours**, sera ajouté en §8.3 / dans la PR.
+
 > **Correction de sincérité (t11, 3 points).** (1) Les preuves P1/P2/P3 étaient présentées comme
 > la démonstration de la cause de la mutité : ce sont des **rejeux manuels** de la chaîne de
 > commande ; leur provenance exacte est maintenant donnée (§2.2.1). (2) La cause (2) est
@@ -935,6 +941,10 @@ t24 — CLI : `node scripts/config.js set quota-alert-pct 55` sur un config.json
         AVANT (lecture brute rétablie) : exit 0 silencieux, fichier APRÈS = { "quota-alert-pct": 55 } — compact-pct 60 et loop-pct 70 DÉTRUITS
 ```
 
+**Revue adverse tour 3 (t25), bornée à ces deux corrections BOM : EN COURS au moment d'écrire.**
+Son verdict (PASS, ou retouche demandée) sera ajouté à ce paragraphe ; si elle demande une
+retouche, elle fera un **commit de suivi sur la même branche**, sans nouveau commit ici.
+
 **Preuve manquante, signalée :** `quota_5h_pct = 0.95` vient d'un **cache d'usage posé par le
 harnais** (`usage-cache.json` du HOME jetable), la récupération réseau étant refusée sous ce bac à
 sable. Ce qui est prouvé est la comparaison au seuil configuré, pas l'appel API.
@@ -1001,6 +1011,28 @@ exit 0
 
 Les deux relevés concordent : les compteurs par fichier ont augmenté après t23/t24 (contrôles BOM),
 le rejeu t10 en tient compte.
+
+**G4 de référence — arbre final gelé, mesuré hors bac à sable par le capitaine** (même commande
+`npm test`, contrôles BOM de t23/t24 en place) :
+
+```
+32 checks passed.                      ← smoke
+ok 1 test\cache-ttl.test.js            (7 checks)
+ok 2 test\config.test.js               (28 passed, 0 failed)
+ok 3 test\disk-cache.test.js           (16 checks)
+ok 4 test\hooks-config.test.js         (28 checks)
+ok 5 test\loop-advisor-cost.test.js
+ok 6 test\loop-advisor.test.js
+ok 7 test\quota-alert.test.js          (32 checks)
+# tests 7 / # pass 7 / # fail 0 / # cancelled 0
+exit 0
+```
+
+C'est ce relevé qui fait foi pour la porte : `hooks-config` 28 et `quota-alert` 32 (le transcript de
+t22, antérieur aux deux correctifs BOM, portait 27 et 29, comme recopié ci-dessus). Le rejeu t10
+fichier par fichier, sur le même arbre, donne exactement les mêmes compteurs. Contre-épreuve
+conservée : `node --test test/` → `# tests 1` / `# pass 0` / `# fail 1`, location `test:1:1` —
+cassé indépendamment du bac à sable ; la forme correcte est le glob de `package.json:12`.
 
 ### 8.5 Pourquoi un `exit 0` ne validait rien (ce que la revue a changé)
 
@@ -1089,6 +1121,21 @@ Fondateur qui exécute ce qui suit.
    ligne est vide en session alors que la commande rend bien sa ligne à la main, le défaut est côté
    Claude Code, pas dans le dépôt.
 
+4. **Deux notes de basse sévérité laissées ouvertes, non corrigées par le lot** (revue adverse
+   tour 2, findings F7/F8). Elles ne bloquent pas la réparation demandée et ne sont pas des
+   défauts de dépôt observables dans le dépôt seul ; elles sont portées ici pour ne pas être perdues :
+   - **(a) charges utiles sans `session_id`.** Deux entrées consécutives dépourvues de `session_id`
+     partagent la clé de cooldown `''` ; la seconde alerte est alors **étouffée** par le délai de
+     réémission (30 min), au lieu d'être rapportée. Le déclencheur réel fournit toujours
+     `session_id` ; le cas n'est donc atteignable que par une invocation manuelle du hook.
+   - **(b) aucun `timeout` déclaré dans `hooks/hooks.json`.** Les entrées dépendent de `main()`, qui
+     lit `fd 0` de façon **bloquante** : si le déclencheur n'écrit pas de charge utile sur l'entrée
+     standard, la commande attend indéfiniment. Les entrées de `~/.claude/settings.json` du poste
+     déclarent, elles, un `timeout` (10 s pour le hook Orca, §2.7) — le manifeste du plugin, non.
+
+   À trancher plus tard : ajouter `timeout` aux entrées du manifeste, et clé de cooldown par défaut
+   dérivée du PID (ou désactivation du cooldown) quand `session_id` est absent.
+
 ---
 
 ## 10. Réserves portées au lot
@@ -1130,5 +1177,14 @@ Fondateur qui exécute ce qui suit.
 
 4. **F7/F8 portés par la revue t21, non traités par le lot (basse sévérité).** Deux charges utiles
    sans `session_id` partagent la clé `''` et la seconde est étouffée par l'anti-spam ; aucun
-   `timeout` n'est déclaré alors que les `main()` lisent `fd 0` en synchrone. Signalés, hors
-   périmètre de la réparation demandée.
+   `timeout` n'est déclaré alors que les `main()` lisent `fd 0` en synchrone. Détaillés en **§9.4**,
+   signalés et non corrigés (hors périmètre de la réparation demandée).
+5. **Publication de la branche par l'API GitHub, pas par `git push`.** Dans ce bac à sable,
+   `git push` est impossible : backend `schannel` en échec sur
+   `AcquireCredentialsHandle … SEC_E_NO_CREDENTIALS`, backend `openssl` sans la racine du certificat
+   d'interception, et binaires MSYS (`openssl`, `tar`) qui meurent sur
+   `CreateFileMapping … Win32 error 5`. La branche a donc été créée via l'API Git Data (`gh`, TLS
+   propre) : blobs, arbre (`base_tree` = arbre de `main`), puis commit aux métadonnées identiques —
+   l'oid distant est **égal** à l'oid local (arbre, parent, auteur/committer et message identiques,
+   saut de ligne final compris). Le commit local et le commit distant sont le même objet ; un
+   `git fetch` hors de ce bac à sable récupère la branche normalement.

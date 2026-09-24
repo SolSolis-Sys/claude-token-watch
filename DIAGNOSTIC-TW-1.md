@@ -435,7 +435,10 @@ la forme du tour 1) : **6 entrées sur 6 muettes** — `exit 0`, `stdout 0 o`, a
   commande du manifeste fonctionnait comme elle le prétendait. L'attribution de cette garde à un
   tour précis du lot **n'est pas démontrée** : ce qui est mesuré est `git grep -n "require.main"
   HEAD -- hooks/` = **0 résultat** (aucun hook de 0.3.6 n'en porte) contre 4 fichiers qui en portent
-  dans l'arbre réparé.
+  dans l'arbre réparé. Le brief de clôture **attribue** cette garde à t13 (le lot est resté non
+  commité jusqu'à cette branche, donc aucun commit intermédiaire ne permet de le vérifier ; ce qui
+  est établi est qu'elle précède le correctif de dispatch de t18, sinon `hooks/metrics-writer.js`
+  aurait été muet lui aussi et un `exit 0` de la forme `-e require` n'aurait pas écrit de fichier).
 
 **Forme finale (t18) et règle générale.** La forme livrée est l'**appel explicite de l'entrée
 exportée du module** : `…')).main()` (et `.main().catch(() => process.exit(0))` pour

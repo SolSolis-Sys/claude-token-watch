@@ -136,7 +136,12 @@ Two narrowings of that chain, as implemented:
 | `loop_advisor`, `tls_strict` | environment variable > `config.yaml` > default — a `config.json` entry for either is ignored |
 | `show_cache_ttl`, `cache_warning_seconds` | `config.yaml` > default — no environment variable, not read from `config.json` |
 
-Nothing throws: an absent, unreadable or malformed file simply means the next source applies (`config.json` that is not valid JSON, a JSON array or `null` is treated as absent). A threshold that the hook cannot use — text, `NaN`, zero or negative — is normalized back to the default by `loop-advisor.js`, and a value above 100 is clamped to 100; the CLI refuses anything outside `0-99` before it is written.
+Two different behaviours, depending on who reads:
+
+- **The hooks and the statusline never throw.** For them an absent, unreadable or malformed file simply means the next source applies: a `config.json` that is not valid JSON, a JSON array or `null` is treated as absent, and the defaults apply. A file written UTF-16LE by PowerShell 5.1 (`>` or `Out-File -Encoding unicode`), a truncated file or commented JSON lands in the same bucket — the settings are silently *not* applied, the component still works and still exits 0.
+- **`token-watch-config` refuses to work on such a file.** `set` and `get` exit 1, print nothing on stdout, and name the path and the suspected cause on stderr; nothing is written, so the settings still on disk survive. `reset` is the exception — it deletes the file without reading it (see *CLI*).
+
+A threshold that the hook cannot use — text, `NaN`, zero or negative — is normalized back to the default by `loop-advisor.js`, and a value above 100 is clamped to 100; the CLI refuses anything outside `0-99` before it is written.
 
 ### Configurable thresholds
 
@@ -188,7 +193,22 @@ token-watch-config get quota-alert-pct        # show one key
 token-watch-config reset                      # restore built-in defaults
 ```
 
-Keys are accepted with dashes (`quota-alert-pct`, the CLI spelling) or underscores (`quota_alert_pct`, the `config.yaml` spelling); either way `set` stores one canonical dashed key in `config.json`. `set` validates the value (`0-99` — `100`, `-1` and text are refused with a non-zero exit and nothing is written), `get` reports the effective value with the environment variable winning, and `reset` restores the built-in defaults. The four keys above are the only ones accepted; anything else is refused.
+Keys are accepted with dashes (`quota-alert-pct`, the CLI spelling) or underscores (`quota_alert_pct`, the `config.yaml` spelling); either way `set` stores one canonical dashed key in `config.json`. `set` validates the value (`0-99` — `100`, `-1` and text are refused with a non-zero exit and nothing is written) and `get` reports the effective value with the environment variable winning. The four keys above are the only ones accepted; anything else is refused.
+
+Both need to read the file first, so a `config.json` that is present but is not a UTF-8 JSON object is **not** treated as "no settings". The CLI exits 1, stdout stays empty, and stderr names the file and the suspected cause:
+
+```text
+$ token-watch-config get          # exit 1, stdout empty
+token-watch: C:\Users\you\.claude\token-watch\config.json is present but unreadable — it is not UTF-8 but UTF-16LE (BOM FF FE).
+token-watch: refusing to overwrite it; no modification was made.
+token-watch: it must be a UTF-8 JSON object — fix it or delete it, then retry.
+```
+
+`set` is refused the same way (same exit 1, same three lines, file untouched) instead of overwriting it with an empty object — which is how settings used to be lost. A truncated file reports `invalid JSON (Expected ',' or '}' after property value …)`, commented JSON `invalid JSON (Expected property name or '}' …)`, and a non-object root `invalid — the root is a JSON array, not an object` (or `… the root is null, not an object`); the positions Node quotes depend on the file contents.
+
+`reset` is the exception: it restores the built-in defaults by **deleting** `config.json` without reading it. On a UTF-16LE, truncated or commented file it therefore succeeds — exit 0, `Deleted: <path>` — and whatever was stored there is discarded with no warning about the contents, where a `get` on that same file exits 1. Use `reset` when you want the file gone, not when you want to know what it said.
+
+A file the CLI refuses is not fatal for the plugin: the hooks and the statusline keep working from `config.yaml` and the defaults (see *Where settings live*).
 
 What the CLI writes is picked up by the hooks and the statusline, because `lib/config.js` reads `config.json` as a fallback below `config.yaml` — and the environment still wins over both (see *Where settings live*).
 

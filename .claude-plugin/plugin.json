@@ -1,6 +1,6 @@
 {
   "name": "token-watch",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "description": "Live token, context-window and cost monitoring for Claude Code — statusline gauge, auto-compact suggestions, and usage reports. Zero dependencies.",
   "author": {
     "name": "SolSolis-Sys",
@@ -10,10 +10,6 @@
   "repository": "https://github.com/SolSolis-Sys/claude-token-watch",
   "license": "MIT",
   "keywords": ["tokens", "cost", "monitoring", "statusline", "context-window", "usage", "compact"],
-  "statusLine": {
-    "type": "command",
-    "command": "node \"${CLAUDE_PLUGIN_ROOT}/statusline/statusline.js\""
-  },
   "hooks": {
     "UserPromptSubmit": [
       {
@@ -21,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/loop-advisor.js\""
+            "command": "node -e \"require(require('path').join(process.env.CLAUDE_PLUGIN_ROOT,'hooks','loop-advisor.js')).main()\""
           }
         ]
       }
@@ -32,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/metrics-writer.js\""
+            "command": "node -e \"require(require('path').join(process.env.CLAUDE_PLUGIN_ROOT,'hooks','metrics-writer.js')).main().catch(()=>process.exit(0))\""
           }
         ]
       }
@@ -43,7 +39,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/context-guard.js\""
+            "command": "node -e \"require(require('path').join(process.env.CLAUDE_PLUGIN_ROOT,'hooks','context-guard.js')).main()\""
           }
         ]
       },
@@ -52,7 +48,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/metrics-writer.js\""
+            "command": "node -e \"require(require('path').join(process.env.CLAUDE_PLUGIN_ROOT,'hooks','metrics-writer.js')).main().catch(()=>process.exit(0))\""
           }
         ]
       },
@@ -61,7 +57,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/loop-advisor.js\""
+            "command": "node -e \"require(require('path').join(process.env.CLAUDE_PLUGIN_ROOT,'hooks','loop-advisor.js')).main()\""
           }
         ]
       }
@@ -72,7 +68,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-logger.js\""
+            "command": "node -e \"require(require('path').join(process.env.CLAUDE_PLUGIN_ROOT,'hooks','session-logger.js')).main()\""
           }
         ]
       }

@@ -66,4 +66,9 @@ function main() {
   process.exit(0);
 }
 
-main();
+// Post-fix rule: requiring this file must NOT run the hook (the manifest calls
+// the exported entry explicitly from `node -e`, where require.main is
+// undefined). Direct file execution stays supported through the guard.
+if (require.main === module) main();
+
+module.exports = { main };

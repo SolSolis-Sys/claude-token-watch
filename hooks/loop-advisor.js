@@ -12,12 +12,17 @@
  *     spend alongside the quota gauge (issue #3).
  *   - systemMessage: visible banner for the user
  *
+ * Crossing TOKEN_WATCH_QUOTA_ALERT_PCT (default 90%) escalates the same output
+ * into an explicit 5h quota alert: the advisory names the crossed threshold, and
+ * a crossing is emitted even if the loop advisory fired seconds earlier.
+ *
  * No-op when:
  *   - Disk cache is absent or corrupt
- *   - 5h utilization is below threshold
+ *   - 5h utilization is below both thresholds
  *   - TOKEN_WATCH_LOOP_ADVISOR=0 (opt-out)
  *
- * TOKEN_WATCH_LOOP_PCT           — threshold % (0-100, default 80)
+ * TOKEN_WATCH_LOOP_PCT           — loop advisory threshold % (0-100, default 80)
+ * TOKEN_WATCH_QUOTA_ALERT_PCT    — 5h quota alert threshold % (0-100, default 90)
  * TOKEN_WATCH_LOOP_IMMINENT_MINS — minutes remaining considered "imminent" (default 15)
  * TOKEN_WATCH_LOOP_ADVISOR=0     — disable this hook entirely
  */
@@ -33,22 +38,36 @@ const { usd } = require('../lib/format');
 /** Default imminent threshold in minutes. Overridable for testing and power-users. */
 const DEFAULT_IMMINENT_MINS = 15;
 
-/** Minimum gap between two consecutive advisories (cross-hook cooldown). */
-const ADVISORY_COOLDOWN_MS = 60 * 1000; // 60 seconds
+/** Fallbacks when a configured threshold is missing or not a usable number. */
+const DEFAULT_LOOP_PCT = 80;
+const DEFAULT_QUOTA_ALERT_PCT = 90;
+
+/** Same session: minimum gap between two advisories of the same level. Long
+ *  enough to absorb the UserPromptSubmit+Stop double-fire of one interaction,
+ *  short enough that a sustained overrun is never hidden for long. */
+const ADVISORY_RENOTIFY_MS = 30 * 60 * 1000; // 30 minutes
 const ADVISORY_CACHE_FILE = path.join(os.homedir(), '.claude', 'token-watch', 'loop-advisor-last.json');
 
+/** Coerce a config/env percentage to a usable 1-100 number, else the fallback. */
+function normalizePct(value, fallback) {
+  const n = Number(value);
+  if (!isFinite(n) || n <= 0) return fallback;
+  return Math.max(1, Math.min(100, n));
+}
+
+/** Last advisory state: { sessionId, ts, pct }, or null when unreadable. */
 function readLastAdvisory() {
   try {
     const raw = fs.readFileSync(ADVISORY_CACHE_FILE, 'utf8');
     const p = JSON.parse(raw);
-    return typeof p.ts === 'number' ? p.ts : 0;
-  } catch { return 0; }
+    return p && typeof p === 'object' ? p : null;
+  } catch { return null; }
 }
 
-function writeLastAdvisory() {
+function writeLastAdvisory(state) {
   try {
     fs.mkdirSync(path.dirname(ADVISORY_CACHE_FILE), { recursive: true });
-    fs.writeFileSync(ADVISORY_CACHE_FILE, JSON.stringify({ ts: Date.now() }));
+    fs.writeFileSync(ADVISORY_CACHE_FILE, JSON.stringify(state));
   } catch { /* best-effort */ }
 }
 
@@ -108,30 +127,38 @@ function sessionCostLabel(transcriptPath) {
   }
 }
 
-function main() {
+/**
+ * Decide and build the advisory. Pure side-effect-wise except the cooldown
+ * state file, and never writes to stdout — so it is testable in-process.
+ *
+ * @param {Object} input hook payload (session_id, transcript_path, hook_event_name)
+ * @returns {{ emit: boolean, output: Object|null }}
+ */
+function run(input) {
   if (process.env.TOKEN_WATCH_LOOP_ADVISOR === '0') {
-    process.exit(0);
+    return { emit: false, output: null };
   }
 
-  // Priority: env var > config.yaml > built-in default (80) — via loadConfig()
-  const rawLoopPct = loadConfig().loop_pct;
-  const threshold  = Math.max(1, Math.min(99, rawLoopPct)) / 100;
+  // Priority: env var > config.yaml > built-in default — via loadConfig().
+  // A text/NaN threshold (env or yaml) falls back to its default, never throws.
+  const cfg = loadConfig();
+  const loopPct  = normalizePct(cfg.loop_pct, DEFAULT_LOOP_PCT);
+  const quotaPct = normalizePct(cfg.quota_alert_pct, DEFAULT_QUOTA_ALERT_PCT);
+  const threshold = Math.min(loopPct, quotaPct) / 100;
   const imminentMins = Math.max(1, Number(process.env.TOKEN_WATCH_LOOP_IMMINENT_MINS) || DEFAULT_IMMINENT_MINS);
 
   const disk = readDiskCache();
   if (!disk || !disk.data) {
-    process.exit(0);
+    return { emit: false, output: null };
   }
 
   const { session5hPct, resetsSession } = disk.data;
-  if (typeof session5hPct !== 'number' || session5hPct < threshold) {
-    process.exit(0);
+  if (typeof session5hPct !== 'number' || !isFinite(session5hPct) || session5hPct < threshold) {
+    return { emit: false, output: null };
   }
 
-  // Read transcript path from stdin (hook payload).
-  let input = {};
-  try { input = JSON.parse(readStdin() || '{}'); } catch { input = {}; }
-  const transcriptPath = input.transcript_path || null;
+  const payload = input && typeof input === 'object' ? input : {};
+  const transcriptPath = payload.transcript_path || null;
 
   const pctDisplay = Math.round(session5hPct * 100);
   const minsLeft   = minutesUntil(resetsSession);
@@ -139,12 +166,21 @@ function main() {
   const costLabel  = sessionCostLabel(transcriptPath);
 
   const imminent = minsLeft !== null && minsLeft <= imminentMins;
+  const overQuota = session5hPct >= quotaPct / 100;
 
   // Cooldown — prevents double-firing when both UserPromptSubmit and Stop
   // trigger loop-advisor within the same interaction (interactive mode).
-  const lastAdvisory = readLastAdvisory();
-  if (Date.now() - lastAdvisory < ADVISORY_COOLDOWN_MS) {
-    process.exit(0);
+  // It is scoped to the session so it can never swallow the first advisory of a
+  // new session, and it can never hide a sustained overrun for more than
+  // ADVISORY_RENOTIFY_MS. A fresh quota crossing always goes through.
+  const sessionId = typeof payload.session_id === 'string' ? payload.session_id : '';
+  const last = readLastAdvisory();
+  if (last && last.sessionId === sessionId) {
+    const elapsed = Date.now() - (typeof last.ts === 'number' ? last.ts : 0);
+    const crossing = overQuota && (typeof last.pct !== 'number' || last.pct < quotaPct / 100);
+    if (!crossing && elapsed < ADVISORY_RENOTIFY_MS) {
+      return { emit: false, output: null };
+    }
   }
 
   // Build the time string
@@ -158,29 +194,50 @@ function main() {
   // Build optional cost string
   const costStr = costLabel ? ` · session cost ${costLabel}` : '';
 
-  const advisory = imminent
-    ? `[token-watch] 5h quota at ${pctDisplay}%${timeStr}${costStr}. Reset imminent — do NOT start a new autonomous loop. Wrap up current work cleanly.`
-    : `[token-watch] 5h quota at ${pctDisplay}%${timeStr}${costStr}. Long autonomous loops risk interruption before reset. If planning a multi-step task (>5min), consider completing current work and resuming after the reset.`;
+  const tail = imminent
+    ? 'Reset imminent — do NOT start a new autonomous loop. Wrap up current work cleanly.'
+    : 'Long autonomous loops risk interruption before reset. If planning a multi-step task (>5min), consider completing current work and resuming after the reset.';
+
+  const advisory = overQuota
+    ? `[token-watch] 5h quota at ${pctDisplay}% — above your quota alert threshold (quota_alert_pct ${quotaPct}%)${timeStr}${costStr}. ${tail}`
+    : `[token-watch] 5h quota at ${pctDisplay}%${timeStr}${costStr}. ${tail}`;
 
   const banner = imminent
     ? `⛔ token-watch: 5h at ${pctDisplay}%${timeStr}${costStr} — do not start loops`
     : `⏱ token-watch: 5h at ${pctDisplay}%${timeStr}${costStr}`;
 
-  writeLastAdvisory();
+  writeLastAdvisory({ sessionId, ts: Date.now(), pct: session5hPct });
 
   // Determine which hook event triggered this invocation (UserPromptSubmit or Stop).
   // The Stop hook payload does not include a hookEventName, so we fall back to
   // 'UserPromptSubmit' to remain compatible with the existing advisory schema.
-  const hookEventName = input.hook_event_name || 'UserPromptSubmit';
+  const hookEventName = payload.hook_event_name || 'UserPromptSubmit';
 
-  process.stdout.write(JSON.stringify({
-    hookSpecificOutput: {
-      hookEventName,
-      additionalContext: advisory,
+  return {
+    emit: true,
+    output: {
+      hookSpecificOutput: {
+        hookEventName,
+        additionalContext: advisory,
+      },
+      systemMessage: banner,
     },
-    systemMessage: banner,
-  }));
+  };
+}
+
+function main() {
+  let input = {};
+  try { input = JSON.parse(readStdin() || '{}'); } catch { input = {}; }
+  try {
+    const { emit, output } = run(input);
+    if (emit && output) process.stdout.write(JSON.stringify(output));
+  } catch { /* a hook must never break the session */ }
   process.exit(0);
 }
 
-main();
+// Direct file execution (`node hooks/loop-advisor.js`) keeps working; the
+// manifest dispatches through `node -e`, where require.main is undefined and
+// only an explicit `.main()` call can reach the entry.
+if (require.main === module) main();
+
+module.exports = { main, run, normalizePct, DEFAULT_QUOTA_ALERT_PCT, DEFAULT_LOOP_PCT };

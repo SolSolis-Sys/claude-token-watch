@@ -10,8 +10,12 @@
  * Usage:
  *   token-watch-config set compact-pct <0-99>   # context-window compact threshold
  *   token-watch-config set loop-pct <0-99>      # 5h quota advisory threshold
+ *   token-watch-config set quota-alert-pct <0-99> # 5h quota alert threshold
  *   token-watch-config get [key]                # show current effective config
  *   token-watch-config reset                    # restore built-in defaults
+ *
+ * Keys are accepted with dashes (CLI spelling) or underscores (config.yaml
+ * spelling): `set quota_alert_pct 85` and `set quota-alert-pct 85` are the same.
  */
 
 const fs   = require('fs');
@@ -23,14 +27,24 @@ const CONFIG_FILE = path.join(os.homedir(), '.claude', 'token-watch', 'config.js
 const VALID_KEYS = {
   'compact-pct': { envVar: 'TOKEN_WATCH_COMPACT_PCT', default: 80, description: 'Context-window % to trigger /compact nudge' },
   'loop-pct':    { envVar: 'TOKEN_WATCH_LOOP_PCT',    default: 80, description: '5h quota % to trigger loop advisor'         },
+  'quota-alert-pct': { envVar: 'TOKEN_WATCH_QUOTA_ALERT_PCT', default: 90, description: '5h quota % above which the session alert fires' },
   'pre-compact-pct': { envVar: 'TOKEN_WATCH_PRE_COMPACT_PCT', default: 85, description: 'Context-window % to emit pre-compact warning (fires once per session)' },
 };
+
+/** config.yaml spells keys with underscores, this CLI with dashes. Accept both. */
+function normalizeKey(key) {
+  return typeof key === 'string' ? key.replace(/_/g, '-') : key;
+}
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
 function readConfig() {
   try {
-    const raw = fs.readFileSync(CONFIG_FILE, 'utf8');
+    // config.json is hand-editable; PowerShell 5.1 `Set-Content -Encoding utf8`
+    // and Notepad write a UTF-8 BOM, which JSON.parse rejects. The pre-fix
+    // catch returned {} — so `set` not only ignored every existing key, it
+    // overwrote the file with a single-key object and destroyed the settings.
+    const raw = fs.readFileSync(CONFIG_FILE, 'utf8').replace(/^\uFEFF/, '');
     const parsed = JSON.parse(raw);
     return (parsed && typeof parsed === 'object') ? parsed : {};
   } catch {
@@ -58,9 +72,10 @@ function effectiveValue(key, cfg) {
 
 // ── commands ───────────────────────────────────────────────────────────────
 
-function cmdSet(key, rawValue) {
+function cmdSet(rawKey, rawValue) {
+  const key = normalizeKey(rawKey);
   if (!VALID_KEYS[key]) {
-    console.error(`Unknown key: "${key}". Valid keys: ${Object.keys(VALID_KEYS).join(', ')}`);
+    console.error(`Unknown key: "${rawKey}". Valid keys: ${Object.keys(VALID_KEYS).join(', ')}`);
     process.exit(1);
   }
   const num = parseInt(rawValue, 10);
@@ -74,12 +89,13 @@ function cmdSet(key, rawValue) {
   console.log(`token-watch: "${key}" set to ${num}% (stored in ${CONFIG_FILE})`);
 }
 
-function cmdGet(filterKey) {
+function cmdGet(rawFilterKey) {
   const cfg = readConfig();
+  const filterKey = normalizeKey(rawFilterKey) || null;
   const keys = filterKey ? [filterKey] : Object.keys(VALID_KEYS);
 
   if (filterKey && !VALID_KEYS[filterKey]) {
-    console.error(`Unknown key: "${filterKey}". Valid keys: ${Object.keys(VALID_KEYS).join(', ')}`);
+    console.error(`Unknown key: "${rawFilterKey}". Valid keys: ${Object.keys(VALID_KEYS).join(', ')}`);
     process.exit(1);
   }
 
@@ -116,6 +132,7 @@ function printHelp() {
   console.log('Usage:');
   console.log('  token-watch-config set compact-pct <0-99>     # context % to trigger /compact nudge');
   console.log('  token-watch-config set loop-pct <0-99>        # 5h quota % to trigger loop advisor');
+  console.log('  token-watch-config set quota-alert-pct <0-99> # 5h quota % to trigger the alert');
   console.log('  token-watch-config set pre-compact-pct <0-99> # context % to emit pre-compact warning');
   console.log('  token-watch-config get [key]                  # show current effective config');
   console.log('  token-watch-config reset                      # restore built-in defaults');
@@ -149,4 +166,17 @@ function main() {
   }
 }
 
-main();
+if (require.main === module) main();
+
+module.exports = {
+  CONFIG_FILE,
+  VALID_KEYS,
+  normalizeKey,
+  readConfig,
+  writeConfig,
+  effectiveValue,
+  cmdSet,
+  cmdGet,
+  cmdReset,
+  main,
+};
